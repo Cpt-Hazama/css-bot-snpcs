@@ -1,0 +1,7 @@
+"LightmappedGeneric"
+{
+	// Original shader: DecalBaseTimesLightmapAlphaBlend
+	"$translucent" 1
+	"$basetexture" "cstrike/siteA"
+	"$decal" 1
+}
