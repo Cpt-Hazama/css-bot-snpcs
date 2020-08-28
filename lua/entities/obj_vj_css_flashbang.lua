@@ -103,8 +103,6 @@ function ENT:DeathEffects()
 					end
 				end)
 			elseif v:IsNPC() then
-				v:SetEnemy(NULL)
-				v:ClearSchedule()
 				if v.IsVJBaseSNPC then
 					v.DisableFindEnemy = true
 					v:ResetEnemy()
@@ -114,6 +112,9 @@ function ENT:DeathEffects()
 						end
 					end)
 				end
+				v:SetEnemy(NULL)
+				v:ClearSchedule()
+				v:ClearGoal()
 			end
 		end
 	end

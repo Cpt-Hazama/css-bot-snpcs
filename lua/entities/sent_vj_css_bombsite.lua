@@ -27,13 +27,13 @@ end
 if !(SERVER) then return end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:Initialize()
-	self:SetModel("models/props_junk/garbage_carboard002a.mdl")
+	self:SetModel("models/cpthazama/css/site.mdl")
 	self:PhysicsInit(SOLID_VPHYSICS)
 	self:SetMoveType(MOVETYPE_NONE)
 	self:SetSolid(SOLID_VPHYSICS)
 	self:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
 	self:SetUseType(SIMPLE_USE)
-	self:SetNoDraw(true)
+	-- self:SetNoDraw(true)
 	self:DrawShadow(false)
 
 	local pass = true
@@ -59,10 +59,12 @@ function ENT:Initialize()
 	
 	Entity(1):ChatPrint("Successfully created Bomb Site " .. self:GetNWString("Site") .. "!")
 	
-	local tr = util.TraceLine({start=self:GetPos(),endpos=self:GetPos() +Vector(math.Rand(-150,150),math.Rand(-150,150),-150),filter=self})
-	local tr2 = util.TraceLine({start=self:GetPos(),endpos=self:GetPos() +Vector(math.Rand(-150,150),math.Rand(-150,150),-150),filter=self})
-	util.Decal("VJ_CSS_BombSite",tr.HitPos +tr.HitNormal,tr.HitPos -tr.HitNormal,self)
-	util.Decal("VJ_CSS_BombSite" .. self:GetNWString("Site"),tr2.HitPos +tr2.HitNormal,tr2.HitPos -tr2.HitNormal,self)
+	self:SetSkin(self:GetNWString("Site") == "B" && 1 or 0)
+	
+	-- local tr = util.TraceLine({start=self:GetPos(),endpos=self:GetPos() +Vector(math.Rand(-150,150),math.Rand(-150,150),-150),filter=self})
+	-- local tr2 = util.TraceLine({start=self:GetPos(),endpos=self:GetPos() +Vector(math.Rand(-150,150),math.Rand(-150,150),-150),filter=self})
+	-- util.Decal("VJ_CSS_BombSite",tr.HitPos +tr.HitNormal,tr.HitPos -tr.HitNormal,self)
+	-- util.Decal("VJ_CSS_BombSite" .. self:GetNWString("Site"),tr2.HitPos +tr2.HitNormal,tr2.HitPos -tr2.HitNormal,self)
 end
 /*--------------------------------------------------
 	*** Copyright (c) 2012-2020 by DrVrej, All rights reserved. ***

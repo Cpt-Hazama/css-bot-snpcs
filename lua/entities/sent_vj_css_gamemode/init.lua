@@ -4,6 +4,11 @@ include('shared.lua')
 
 ENT.BotsPerTeam = 8
 
+ENT.CT_Classes = {"npc_vj_css_ct_gign","npc_vj_css_ct_gsg","npc_vj_css_ct_sas","npc_vj_css_ct_seal"}
+ENT.T_Classes = {"npc_vj_css_t_arctic","npc_vj_css_t_elite","npc_vj_css_t_guerilla","npc_vj_css_t_phoenix"}
+ENT.CT_Weapons = VJ_CSS_WEAPONS_CT
+ENT.T_Weapons = VJ_CSS_WEAPONS_T
+
 util.AddNetworkString("vj_css_csound")
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:Initialize()
@@ -11,7 +16,7 @@ function ENT:Initialize()
 	self:DrawShadow(false)
 	self:SetNoDraw(true)
 	self:SetNotSolid(true)
-	for _,v in pairs(ents.FindByClass("sent_vj_css_gamemode")) do
+	for _,v in pairs(ents.FindByClass(self:GetClass())) do
 		if IsValid(v) && v != self then
 			self:Remove()
 		end
@@ -44,13 +49,13 @@ function ENT:SuccessfulInit()
 		-- local pos = VJ_PICK(self.SpawnPositions[1])
 		local pos = self.SpawnPositions[1][i]
 		if pos then
-			local bot = ents.Create(VJ_PICK({"npc_vj_css_ct_gign","npc_vj_css_ct_gsg","npc_vj_css_ct_sas","npc_vj_css_ct_seal"}))
+			local bot = ents.Create(VJ_PICK(self.CT_Classes))
 			bot:SetPos(pos:GetPos())
 			bot:Spawn()
 			bot.NextObjectiveT = CurTime() +1
 			bot.Team = 1
 			bot.GM = true
-			bot:Give(VJ_PICK(VJ_CSS_WEAPONS_CT))
+			bot:Give(VJ_PICK(self.CT_Weapons))
 			SafeRemoveEntity(pos)
 		end
 	end
@@ -59,7 +64,7 @@ function ENT:SuccessfulInit()
 		-- local pos = VJ_PICK(self.SpawnPositions[2])
 		local pos = self.SpawnPositions[2][i]
 		if pos then
-			local bot = ents.Create(VJ_PICK({"npc_vj_css_t_arctic","npc_vj_css_t_elite","npc_vj_css_t_guerilla","npc_vj_css_t_phoenix"}))
+			local bot = ents.Create(VJ_PICK(self.T_Classes))
 			bot:SetPos(pos:GetPos())
 			bot:Spawn()
 			bot.NextObjectiveT = CurTime() +1
@@ -68,7 +73,7 @@ function ENT:SuccessfulInit()
 			if i == bomber then
 				bot.HasTheBomb = true
 			end
-			bot:Give(VJ_PICK(VJ_CSS_WEAPONS_T))
+			bot:Give(VJ_PICK(self.T_Weapons))
 			SafeRemoveEntity(pos)
 		end
 	end

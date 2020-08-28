@@ -64,26 +64,39 @@ function ENT:CustomOnPhysicsCollide(data,phys)
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:DeathEffects()
-	local function SmokeCode(self)
+	local function SmokeCode(self,ball)
 		for i = 1,math.random(2,4) do
 			local effectdata = EffectData()
 			effectdata:SetOrigin(self:GetPos() +Vector(math.Rand(-20,20),math.Rand(-20,20),math.Rand(-20,20)))
 			util.Effect("VJ_CSS_Smoke",effectdata)
+			if IsValid(ball) then ball:SetPos(self:GetPos()) end
 		end
 	end
 
 	VJ_EmitSound(self,"weapons/smokegrenade/sg_explode.wav",80,100)
+	
+	local ball = ents.Create("prop_vj_animatable")
+	ball:SetModel("models/hunter/misc/sphere375x375.mdl")
+	ball:SetPos(self:GetPos())
+	ball:Spawn()
+	ball:SetNoDraw(true)
+	ball:SetModelScale(1.25,0)
+	ball:SetCollisionGroup(COLLISION_GROUP_DISSOLVING)
+	self:DeleteOnRemove(ball)
 
 	for i = 1,80 do
 		timer.Simple(i *0.25,function()
 			if IsValid(self) then
 				SmokeCode(self)
 			end
+			if i == 80 then
+				SafeRemoveEntity(ball)
+			end
 		end)
 	end
 
 	self:SetDeathVariablesTrue(nil,nil,false)
-	timer.Simple(28,function() SafeRemoveEntity(self) end)
+	timer.Simple(28,function() SafeRemoveEntity(self,ball) end)
 end
 /*-----------------------------------------------
 	*** Copyright (c) 2012-2020 by DrVrej, All rights reserved. ***
