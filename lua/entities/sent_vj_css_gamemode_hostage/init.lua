@@ -113,8 +113,13 @@ function ENT:CheckHostages(madeIt)
 		self:Winner(madeIt && 1 or 2)
 		return true
 	end
-	local text = count > 1 && "Hostages" or "Hostage"
-	self:PlayerMsg(count .. " " .. text .. " remaining!")
+	if madeIt then
+		local text = count > 1 && "Hostages" or "Hostage"
+		self:PlayerMsg(count .. " " .. text .. " remaining!")
+	else
+		local text = count > 1 && "Hostages" or "Hostage"
+		self:PlayerMsg("A Hostage was killed! " .. count .. " " .. text .. " remaining!")
+	end
 
 	return false
 end

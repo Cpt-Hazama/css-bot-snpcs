@@ -703,6 +703,7 @@ function ENT:CustomOnThink()
 		self:BombInit()
 		self.RanBombInit = true
 	end
+	self.DisableFootStepSoundTimer = !(self:GetActivity() == ACT_RUN)
 	self.HasGrenadeAttack = self.GrenadeCount > 0
 	-- if self:GetVelocity():Length() <= 0 && self:GetActivity() == self.WeaponAnimTranslations[ACT_JUMP] then
 		-- self:StartEngineTask(GetTaskList("TASK_RESET_ACTIVITY"),0)
@@ -767,14 +768,14 @@ function ENT:CustomOnThink()
 							self.Objective = VJ_PICK(waitingHostages)
 							if self.Objective then
 								self.TargetPosition = self.Objective:GetPos()
+								self.NextObjectiveT = CurTime() +math.Rand(12,20)
 							end
-							self.NextObjectiveT = CurTime() +math.Rand(12,20)
 						else
 							self.Objective = VJ_PICK(zones)
 							if self.Objective then
 								self.TargetPosition = self.Objective:GetPos()
+								self.NextObjectiveT = CurTime() +math.Rand(20,30)
 							end
-							self.NextObjectiveT = CurTime() +math.Rand(20,30)
 						end
 					end
 					if CurTime() > self.NextSetMoveT && self.TargetPosition then
@@ -782,10 +783,12 @@ function ENT:CustomOnThink()
 						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
 						self.NextSetMoveT = CurTime() +math.Rand(6,12)
 					end
-					if IsValid(self.Objective) && self:GetPos():Distance(self.Objective:GetPos()) <= 80 then
+					if IsValid(self.Objective) && self.Objective:IsNPC() && self:GetPos():Distance(self.Objective:GetPos()) <= 80 then
 						if !IsValid(self.Objective.FollowingEntity) then
-							self.Objective.FollowingEntity = self
-							self.NextObjectiveT = CurTime() +1
+							-- self.Objective.FollowingEntity = self
+							self.Objective:SetFollowEntity(self)
+							self.NextObjectiveT = CurTime()
+							self.NextSetMoveT = CurTime()
 						end
 					end
 				end

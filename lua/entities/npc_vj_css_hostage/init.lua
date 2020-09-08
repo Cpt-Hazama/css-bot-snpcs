@@ -99,14 +99,26 @@ function ENT:CustomOnInitialize()
 	end
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:SetFollowEntity(ent)
+	if IsValid(ent) then
+		self.FollowingEntity = ent
+		VJ_CreateSound(self,self.SoundTbl_FollowPlayer,80)
+	else
+		self.FollowingEntity = NULL
+		VJ_CreateSound(self,self.SoundTbl_UnFollowPlayer,80)
+	end
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:CustomOnAcceptInput(key,activator,caller,data)
 	if key == "Use" && activator:IsPlayer() && self.GM && activator.VJ_NPC_Class && VJ_HasValue(activator.VJ_NPC_Class,"CLASS_CSS_CT") then
 		if !IsValid(self.FollowPlayer_Entity) then
 			self.FollowPlayer_Entity = activator
+			VJ_CreateSound(self,self.SoundTbl_FollowPlayer,80)
 			activator:ChatPrint("Hostage is now following you!")
 		else
 			if activator == self.FollowPlayer_Entity then
 				self.FollowPlayer_Entity = NULL
+				VJ_CreateSound(self,self.SoundTbl_UnFollowPlayer,80)
 				activator:ChatPrint("Hostage is no longer following you!")
 			end
 		end
@@ -189,10 +201,12 @@ function ENT:CustomOnThink()
 	if IsValid(self.FollowingEntity) then
 		local zones = self:VJ_CSS_FindRescueZones()
 		for _,v in pairs(zones) do
-			if v:GetPos():Distance(self:GetPos()) <= 150 then
+			if v:GetPos():Distance(self:GetPos()) <= 175 then
 				local ent = self:VJ_CSS_HostageModeEntity()
-				self:Remove()
-				ent:CheckHostages(true)
+				if IsValid(ent) then
+					self:Remove()
+					ent:CheckHostages(true)
+				end
 				break
 			end
 		end
@@ -234,7 +248,10 @@ function ENT:CustomOnThink()
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:CustomOnKilled()
-	ent:CheckHostages()
+	local ent = self:VJ_CSS_HostageModeEntity()
+	if IsValid(ent) then
+		ent:CheckHostages()
+	end
 end
 /*-----------------------------------------------
 	*** Copyright (c) 2012-2020 by Cpt. Hazama, All rights reserved. ***
