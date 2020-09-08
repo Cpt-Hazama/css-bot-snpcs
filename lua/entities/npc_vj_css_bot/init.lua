@@ -195,8 +195,8 @@ ENT.ThrowGrenadeChance = 3
 ENT.PrimaryWeapons = {
 	["CT"] = {
 		"weapon_vj_css_m16",
-		"weapon_vj_css_tmp",
 		"weapon_vj_css_aug",
+		"weapon_vj_css_tmp",
 		"weapon_vj_css_famas",
 		"weapon_vj_css_sg550",
 		"weapon_vj_css_m3super",
@@ -283,6 +283,11 @@ function ENT:SetWeapons()
 	self.Primary = VJ_PICK(self.PrimaryWeapons[self.VJ_NPC_Class[1] == "CLASS_CSS_CT" && "CT" or "T"])
 	self.Secondary = VJ_PICK(self.SecondaryWeapons[self.VJ_NPC_Class[1] == "CLASS_CSS_CT" && "CT" or "T"])
 	self:Give(self.Primary)
+	timer.Simple(0.01,function()
+		if IsValid(self) && !IsValid(self:GetActiveWeapon()) then
+			self:SetWeapons()
+		end
+	end)
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:SwapWeapons()
@@ -311,15 +316,16 @@ function ENT:CustomOnInitialize()
 	self.NextObjectiveT = CurTime()
 	self.RanBombInit = false
 	self.NextSetMoveT = 0
+	self.Hostages = {}
 
 	self.NextSwitchT = CurTime() +1
 	self.CanSwapWeapons = self:VJ_IsDefaultWeaponSelected()
-	timer.Simple(0.02,function()
+	timer.Simple(0,function()
 		self:SetWeapons()
 	end)
 	self:SetGrenade(math.random(1,3))
 	
-	if self:VJ_CSS_ModeActive() then
+	if self:VJ_CSS_ModeActive() or self:VJ_CSS_HostageActive() then
 		self.NextObjectiveT = CurTime() +1
 		self.Team = self.VJ_NPC_Class[1] == "CLASS_CSS_CT" && 1 or 2
 		self.GM = true
@@ -739,11 +745,76 @@ function ENT:CustomOnThink()
 	end
 	self.DisableWandering = self.GM
 	if self.GM then
-		if !self:VJ_CSS_ModeActive() then
+		local currentGM = self:VJ_CSS_HostageActive() or self:VJ_CSS_ModeActive()
+		if !currentGM then
 			self.GM = false
 			return
 		end
 		local team = self.Team
+		if IsValid(self:VJ_CSS_HostageModeEntity()) then
+			local zones = self:VJ_CSS_FindRescueZones()
+			local hostages = self:VJ_CSS_FindHostages()
+			local waitingHostages = {}
+			if team == 1 then // CT
+				if !IsValid(self:GetEnemy()) then
+					if CurTime() > self.NextObjectiveT then
+						for _,v in pairs(hostages) do
+							if !IsValid(v.FollowingEntity) then
+								table.insert(waitingHostages,v)
+							end
+						end
+						if #waitingHostages > 0 then
+							self.Objective = VJ_PICK(waitingHostages)
+							if self.Objective then
+								self.TargetPosition = self.Objective:GetPos()
+							end
+							self.NextObjectiveT = CurTime() +math.Rand(12,20)
+						else
+							self.Objective = VJ_PICK(zones)
+							if self.Objective then
+								self.TargetPosition = self.Objective:GetPos()
+							end
+							self.NextObjectiveT = CurTime() +math.Rand(20,30)
+						end
+					end
+					if CurTime() > self.NextSetMoveT && self.TargetPosition then
+						self:SetLastPosition(self.TargetPosition)
+						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
+						self.NextSetMoveT = CurTime() +math.Rand(6,12)
+					end
+					if IsValid(self.Objective) && self:GetPos():Distance(self.Objective:GetPos()) <= 80 then
+						if !IsValid(self.Objective.FollowingEntity) then
+							self.Objective.FollowingEntity = self
+							self.NextObjectiveT = CurTime() +1
+						end
+					end
+				end
+			elseif team == 2 then // T
+				if !IsValid(self:GetEnemy()) then
+					if CurTime() > self.NextObjectiveT then
+						if math.random(1,8) == 1 then
+							self.Objective = VJ_PICK(zones)
+							if self.Objective then
+								self.TargetPosition = self.Objective:GetPos() +Vector(math.Rand(-500,500),math.Rand(-500,500),math.Rand(0,200))
+							end
+							self.NextObjectiveT = CurTime() +math.Rand(45,60)
+						else
+							self.Objective = VJ_PICK(hostages)
+							if self.Objective then
+								self.TargetPosition = self.Objective:GetPos() +Vector(math.Rand(-500,500),math.Rand(-500,500),math.Rand(0,200))
+							end
+							self.NextObjectiveT = CurTime() +math.Rand(20,30)
+						end
+					end
+					if CurTime() > self.NextSetMoveT && self.TargetPosition then
+						self:SetLastPosition(self.TargetPosition)
+						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
+						self.NextSetMoveT = CurTime() +math.Rand(6,12)
+					end
+				end
+			end
+			return
+		end
 		local sites = self:VJ_CSS_FindBombSites()
 		local theBomb = self:VJ_CSS_FindBomb()
 		if team == 1 then // CT

@@ -77,10 +77,15 @@ if VJExists == true then
 	VJ.AddNPC_HUMAN("(CT) SEAL Team 6","npc_vj_css_ct_seal",VJ_CSS_WEAPONS_CT,vCat)
 	VJ.AddNPC("(CT) Random","sent_vj_css_rand_ct",vCat)
 
+	VJ.AddNPC("Hostage","npc_vj_css_hostage",vCat)
+
 	VJ.AddNPC("(CT) Spawn Point","sent_vj_css_spawn_ct",vCatTools)
 	VJ.AddNPC("(T) Spawn Point","sent_vj_css_spawn_t",vCatTools)
+	VJ.AddNPC("Hostage Spawn Point","sent_vj_css_spawn_hostage",vCatTools)
 	VJ.AddNPC("Bomb Site","sent_vj_css_bombsite",vCatTools)
+	VJ.AddNPC("Rescue Zone","sent_vj_css_rescuesite",vCatTools)
 	VJ.AddNPC("(GM) Bomb Defusal","sent_vj_css_gamemode",vCatTools)
+	VJ.AddNPC("(GM) Hostage Rescue","sent_vj_css_gamemode_hostage",vCatTools)
 	
 	local allWeapons = {
 		["weapon_vj_css_m16"] = "VJ_CSS_M4A1",
@@ -178,8 +183,23 @@ if VJExists == true then
 		return e
 	end
 	
+	function ENT:VJ_CSS_HostageModeEntity()
+		local e = NULL
+		for _,v in pairs(ents.GetAll()) do
+			if v:GetClass() == "sent_vj_css_gamemode_hostage" then
+				e = v
+				break
+			end
+		end
+		return e
+	end
+	
 	function ENT:VJ_CSS_ModeActive()
 		return IsValid(self:VJ_CSS_ModeEntity())
+	end
+	
+	function ENT:VJ_CSS_HostageActive()
+		return IsValid(self:VJ_CSS_HostageModeEntity())
 	end
 	
 	function ENT:VJ_CSS_FindDroppedBomb()
@@ -207,6 +227,18 @@ if VJExists == true then
 	function ENT:VJ_CSS_FindBombSites()
 		if !IsValid(self:VJ_CSS_ModeEntity()) then return false end
 		local sites = self:VJ_CSS_ModeEntity().BombSites
+		return sites
+	end
+	
+	function ENT:VJ_CSS_FindHostages()
+		return ents.FindByClass("npc_vj_css_hostage")
+	end
+	
+	function ENT:VJ_CSS_FindRescueZones()
+		local sites = {}
+		for _,v in pairs(ents.FindByClass("sent_vj_css_rescuesite")) do
+			table.insert(sites,v)
+		end
 		return sites
 	end
 
