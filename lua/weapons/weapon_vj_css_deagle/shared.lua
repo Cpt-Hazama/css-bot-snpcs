@@ -1,15 +1,19 @@
 if (!file.Exists("autorun/vj_base_autorun.lua","LUA")) then return end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-SWEP.Base 								= "weapon_vj_base"
+SWEP.Base 								= "weapon_vj_css_base"
 SWEP.PrintName							= "Deagle"
 SWEP.Author 							= "Cpt. Hazama"
 SWEP.Contact							= ""
 SWEP.Purpose							= ""
-SWEP.Instructions						= ""
+SWEP.Category							= "VJ Base - Counter-Strike: Source"
+
+SWEP.Primary.Delay						= 0.35
+SWEP.Automatic 							= false
+SWEP.ViewModel							= "models/weapons/cstrike/c_pist_deagle.mdl"
 
 SWEP.WorldModel							= "models/weapons/w_pist_deagle.mdl"
 SWEP.HoldType 							= "revolver"
-SWEP.Spawnable							= false
+SWEP.Spawnable							= true
 SWEP.AdminSpawnable						= false
 
 SWEP.NPC_NextPrimaryFire = 0.8

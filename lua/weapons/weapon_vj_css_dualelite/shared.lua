@@ -1,17 +1,18 @@
 if (!file.Exists("autorun/vj_base_autorun.lua","LUA")) then return end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-SWEP.Base 								= "weapon_vj_base"
+SWEP.Base 								= "weapon_vj_css_base"
 SWEP.PrintName							= "Dual Elites"
 SWEP.Author 							= "Cpt. Hazama"
 SWEP.Contact							= ""
 SWEP.Purpose							= ""
-SWEP.Instructions						= ""
 
+SWEP.ViewModel							= "models/weapons/cstrike/c_pist_elite.mdl"
 SWEP.WorldModel							= "models/weapons/w_pist_elite.mdl"
 SWEP.HoldType 							= "dual"
 SWEP.Spawnable							= false
 SWEP.AdminSpawnable						= false
 
+SWEP.MadeForNPCsOnly = true
 SWEP.NPC_NextPrimaryFire = 0.16
 SWEP.NPC_TimeUntilFire = 0
 SWEP.NPC_TimeUntilFireExtraTimers = {}

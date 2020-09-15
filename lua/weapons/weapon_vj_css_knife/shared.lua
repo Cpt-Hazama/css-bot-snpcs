@@ -1,6 +1,6 @@
 if (!file.Exists("autorun/vj_base_autorun.lua","LUA")) then return end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-SWEP.Base 						= "weapon_vj_base"
+SWEP.Base 						= "weapon_vj_css_base"
 SWEP.PrintName					= "Knife"
 SWEP.Author 					= "Cpt. Hazama"
 
