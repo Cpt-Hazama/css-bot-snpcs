@@ -361,6 +361,12 @@ ENT.FootSteps = {
 		"physics/glass/glass_sheet_step4.wav",
 	}
 }
+local c = 0
+local debug = false
+---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:GetSightDirection()
+	return self:GetAttachment(self:LookupAttachment("eyes")).Ang:Forward()
+end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:CustomOnFootStepSound()
 	if !self:IsOnGround() then return end
@@ -461,6 +467,9 @@ function ENT:CustomOnInitialize()
 	timer.Simple(0,function()
 		self:SetWeapons()
 	end)
+	-- timer.Simple(1,function()
+		-- self:GoToSpot(1500)
+	-- end)
 	self:SetGrenade(math.random(1,3))
 	
 	if self:VJ_CSS_ModeActive() or self:VJ_CSS_HostageActive() then
@@ -468,6 +477,7 @@ function ENT:CustomOnInitialize()
 		self.Team = self.VJ_NPC_Class[1] == "CLASS_CSS_CT" && 1 or 2
 		self.GM = true
 	end
+	
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:CalculateKevlar(dmginfo,hitgroup)
@@ -772,44 +782,20 @@ function ENT:BotChat(text)
 	PrintMessage(HUD_PRINTTALK,self:GetName() .. ": " .. tostring(text))
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-function ENT:Between(a,b)
-	local waypoint = self:GetCurWaypointPos()
-	local ang = (waypoint -self:GetPos()):Angle()
-	local dif = math.AngleDifference(self:GetAngles().y,ang.y)
-	return dif < a && dif > b
+function ENT:DecideXY()
+	local moveData = self:GetMoveDirection(true)
+	self:SetPoseParameter("move_x",moveData.x)
+	self:SetPoseParameter("move_y",moveData.y)
+
+	self.LastMoveData = moveData
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-function ENT:DecideXY()
-	local x = 0
-	local y = 0
-	if self:Between(30,-30) then
-		x = 1
-		y = 0
-	elseif self:Between(70,30) then
-		x = 1
-		y = 1
-	elseif self:Between(120,70) then
-		x = 0
-		y = 1
-	elseif self:Between(150,120) then
-		x = -1
-		y = 1
-	elseif !self:Between(150,-150) then
-		x = -1
-		y = 0
-	elseif self:Between(-110,-150) then
-		x = -1
-		y = -1
-	elseif self:Between(-70,-110) then
-		x = 0
-		y = -1
-	elseif self:Between(-30,-70) then
-		x = 1
-		y = -1
-	end
-	
-	self:SetPoseParameter("move_x",x)
-	self:SetPoseParameter("move_y",y)
+function ENT:GetMoveDirection(ignoreZ)
+	if not self:IsMoving() then return Vector(0,0,0) end
+	local waypoint = self:GetCurWaypointPos() or self:GetPos()
+	local dir = (waypoint -self:GetPos())
+	if ignoreZ then dir.z = 0 end
+	return (self:GetAngles() -dir:Angle()):Forward()
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:PlantTheBomb()
@@ -833,9 +819,39 @@ function ENT:AvoidThreat()
 	end
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-local c = 0
-local debug = false
+function ENT:GoToSpot(dist,argent,hide)
+	local spots = VJ_FindHidingSpots(dist,argent or self,hide)
+	local foundPos = false
+	if spots && #spots > 0 then
+		local nav = VJ_PICK(spots)
+		self:SetLastPosition(nav)
+		self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(nav) > 600 && "TASK_WALK_PATH" or "TASK_RUN_PATH")
+		if debug then
+			local pTime = self:GetPathTimeToGoal() *2
+			for _,v in pairs(spots) do
+				if v != nav then
+					local b = VJ_CreateTestObject(v +Vector(0,0,10),Angle(0,0,0),Color(255,0,0),10)
+					b:SetModelScale(1.5)
+				end
+			end
+			local b = VJ_CreateTestObject(nav,Angle(0,0,0),Color(0,255,0),10)
+			b:SetModelScale(3)
+		end
+		foundPos = true
+	end
+	return foundPos
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:CS_FacePosition(pos)
+	local setangs = (pos -self:GetPos()):Angle()
+	self:SetAngles(Angle(self:GetAngles().x,setangs.y,self:GetAngles().z))
+	self:SetIdealYawAndUpdate(setangs.y)
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
+local defOffset = Vector(0,0,10)
 function ENT:CustomOnThink()
+	debug = tobool(GetConVarNumber("vj_css_bot_debug"))
+	local controller = self.VJ_TheController
 	self:DecideXY()
 	if self.HasTheBomb && !self.RanBombInit then
 		self:BombInit()
@@ -843,22 +859,35 @@ function ENT:CustomOnThink()
 	end
 	self.DisableFootStepSoundTimer = !(self:GetActivity() == ACT_RUN)
 	self.HasGrenadeAttack = self.GrenadeCount > 0
-	-- if self:GetVelocity():Length() <= 0 && self:GetActivity() == self.WeaponAnimTranslations[ACT_JUMP] then
-		-- self:StartEngineTask(GetTaskList("TASK_RESET_ACTIVITY"),0)
-		-- self:StopMoving()
-		-- self:ClearSchedule()
-	-- end
 	if IsValid(self:GetEnemy()) then
-		if math.random(1,100) <= 3 && self:Visible(self:GetEnemy()) && self.DoingWeaponAttack then
+		if math.random(1,100) <= 3 && !IsValid(controller) && self:Visible(self:GetEnemy()) && self.DoingWeaponAttack then
 			self:AvoidThreat()
 		end
-		if self.CanSwapWeapons && self:Visible(self:GetEnemy()) then
-			local dist = self:GetEnemy():GetPos():Distance(self:GetPos())
-			local class = self:GetActiveWeapon():GetClass()
-			if class == self.Primary && dist <= 350 && math.random(1,70) == 1 && CurTime() > self.NextSwitchT then
+		if IsValid(controller) then
+			if self.CanSwapWeapons && CurTime() > self.NextSwitchT && controller:KeyDown(IN_WALK) then
 				self:SwapWeapons()
-			elseif class == self.Secondary && dist > 350 && math.random(1,20) == 1 && CurTime() > self.NextSwitchT then
-				self:SwapWeapons()
+				self.NextSwitchT = CurTime() +1
+			end
+			if controller:KeyDown(IN_DUCK) then
+				self.AnimTbl_IdleStand = {ACT_COVER_LOW}
+				self.AnimTbl_WeaponAttack = {ACT_COVER_LOW}
+				self.AnimTbl_Walk = {ACT_WALK_CROUCH}
+				self.AnimTbl_Run = {ACT_RUN_CROUCH}
+			else
+				self.AnimTbl_IdleStand = {ACT_IDLE}
+				self.AnimTbl_WeaponAttack = {ACT_IDLE}
+				self.AnimTbl_Walk = {ACT_WALK}
+				self.AnimTbl_Run = {ACT_RUN}
+			end
+		else
+			if self.CanSwapWeapons && self:Visible(self:GetEnemy()) then
+				local dist = self:GetEnemy():GetPos():Distance(self:GetPos())
+				local class = self:GetActiveWeapon():GetClass()
+				if class == self.Primary && dist <= 350 && math.random(1,70) == 1 && CurTime() > self.NextSwitchT then
+					self:SwapWeapons()
+				elseif class == self.Secondary && dist > 350 && math.random(1,20) == 1 && CurTime() > self.NextSwitchT then
+					self:SwapWeapons()
+				end
 			end
 		end
 	end
@@ -872,18 +901,26 @@ function ENT:CustomOnThink()
 	end
 	if self:IsMoving() then
 		if !self.DoingWeaponAttack && self:GetPos():Distance(self:GetCurWaypointPos()) > 75 then
-			self:FaceCertainPosition(self:GetCurWaypointPos())
+			-- self:FaceCertainPosition(IsValid(controller) && self:GetEnemy():GetPos() or self:GetCurWaypointPos())
+			self:CS_FacePosition(IsValid(controller) && self:GetEnemy():GetPos() or self:GetCurWaypointPos())
 		end
 	end
 	if debug then
 		if CurTime() > c && self:GetCurWaypointPos() then
 			local vec = self:GetCurWaypointPos()
-			VJ_CreateTestObject(vec +Vector(0,0,10))
-			c = CurTime() +0.1
+			local moveData = self.LastMoveData
+			local targX = self:GetPos() +self:GetForward() *(75 *moveData.x)
+			local targY = self:GetPos() +self:GetRight() *(75 *moveData.y)
+			targX.z = vec.z
+			targY.z = vec.z
+			VJ_CreateTestObject(vec +defOffset,Angle(0,0,0),Color(0,100,255))
+			VJ_CreateTestObject(targX,Angle(0,0,0),Color(255,0,0))
+			VJ_CreateTestObject(targY,Angle(0,0,0),Color(0,255,13))
+			c = CurTime() +0.5
 		end
 	end
 	self.DisableWandering = self.GM
-	if self.GM then
+	if self.GM && !IsValid(controller) then
 		local currentGM = self:VJ_CSS_HostageActive() or self:VJ_CSS_ModeActive()
 		if !currentGM then
 			self.GM = false
@@ -936,13 +973,21 @@ function ENT:CustomOnThink()
 						if math.random(1,8) == 1 then
 							self.Objective = VJ_PICK(zones)
 							if self.Objective then
-								self.TargetPosition = self.Objective:GetPos() +Vector(math.Rand(-500,500),math.Rand(-500,500),math.Rand(0,200))
+								-- self.TargetPosition = self.Objective:GetPos() +Vector(math.Rand(-700,700),math.Rand(-700,700),math.Rand(0,200))
+								local b = self:GoToSpot(800,self.Objective)
+								if !b then
+									self.TargetPosition = self.Objective:GetPos() +Vector(math.Rand(-700,700),math.Rand(-700,700),math.Rand(0,200))
+								end
 							end
 							self.NextObjectiveT = CurTime() +math.Rand(45,60)
 						else
 							self.Objective = VJ_PICK(hostages)
 							if self.Objective then
-								self.TargetPosition = self.Objective:GetPos() +Vector(math.Rand(-500,500),math.Rand(-500,500),math.Rand(0,200))
+								-- self.TargetPosition = self.Objective:GetPos() +Vector(math.Rand(-1200,1200),math.Rand(-1200,1200),math.Rand(-20,200))
+								local b = self:GoToSpot(1250,self.Objective)
+								if !b then
+									self.TargetPosition = self.Objective:GetPos() +Vector(math.Rand(-1200,1200),math.Rand(-1200,1200),math.Rand(-20,200))
+								end
 							end
 							self.NextObjectiveT = CurTime() +math.Rand(20,30)
 						end
@@ -1040,8 +1085,11 @@ function ENT:CustomOnThink()
 				if !IsValid(self:GetEnemy()) then
 					if self:GetPos():Distance(theBomb:GetPos()) > 1000 then
 						if CurTime() > self.NextSetMoveT then
-							self:SetLastPosition(theBomb:GetPos() +Vector(math.Rand(-500,500),math.Rand(-500,500),math.Rand(0,200)))
-							self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH")
+							local b = self:GoToSpot(800,theBomb)
+							if !b then
+								self:SetLastPosition(theBomb:GetPos() +Vector(math.Rand(-700,700),math.Rand(-700,700),math.Rand(0,200)))
+								self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH")
+							end
 							self.NextSetMoveT = CurTime() +math.Rand(6,12)
 						end
 					end

@@ -29,7 +29,7 @@ if !(SERVER) then return end
 ENT.Team = 3
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:Initialize()
-	self:SetModel("models/props_junk/garbage_carboard002a.mdl")
+	self:SetModel("models/player/hostage/hostage_04.mdl")
 	self:PhysicsInit(SOLID_VPHYSICS)
 	self:SetMoveType(MOVETYPE_NONE)
 	self:SetSolid(SOLID_VPHYSICS)

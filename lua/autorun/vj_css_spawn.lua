@@ -18,6 +18,130 @@ if VJExists == true then
 	local vCatTools = "Counter-Strike: Source - Tools"
 	VJ.AddCategoryInfo(vCat,{Icon = "vj_icons/css.png"})
 	VJ.AddCategoryInfo(vCatTools,{Icon = "vj_icons/css.png"})
+	
+	VJ.AddConVar("vj_css_bot_debug",0)
+	VJ.AddClientConVar("vj_css_team","0","Automatically set player team since people are too stupid to press 2 buttons... [0 = Disabled, 1 = CT, 2 = T]")
+
+	if CLIENT then
+		hook.Add("PopulateToolMenu", "VJ_ADDTOMENU_CSS", function()
+			spawnmenu.AddToolMenuOption("DrVrej", "SNPC Configures", "Counter-Strike Source", "Counter-Strike Source", "", "", function(Panel)
+				if !game.SinglePlayer() && !LocalPlayer():IsAdmin() then
+					Panel:AddControl("Label", {Text = "#vjbase.menu.general.admin.not"})
+					Panel:AddControl( "Label", {Text = "#vjbase.menu.general.admin.only"})
+					return
+				end
+				Panel:AddControl("Label",{Text = "#vjbase.menu.general.admin.only"})
+				Panel:AddControl("Checkbox", {Label = "[Developers] Enable Bot Debugging", Command = "vj_css_bot_debug"})
+				Panel:AddControl("Slider", {Label = "Choose Your Team", Command = "vj_css_team", Type = "Integer", Min = "0", Max = "2"})
+				Panel:AddControl("Label",{Text = "0 = No Team, 1 = Counter-Terrorists, 2 = Terrorists"})
+				Panel:AddControl("Label",{Text = "Note that if your Team isn't 0, many of your Player values/settings will change!"})
+			end)
+		end)
+	end
+
+	if SERVER then
+		util.AddNetworkString("vj_css_teams")
+	
+		local CT_PRI = {
+			"weapon_vj_css_m16",
+			"weapon_vj_css_tmp",
+			"weapon_vj_css_aug",
+			"weapon_vj_css_famas",
+			"weapon_vj_css_sg550",
+			"weapon_vj_css_m3super",
+			"weapon_vj_css_xm1014",
+			"weapon_vj_css_mp5",
+			"weapon_vj_css_p90",
+			"weapon_vj_css_ump",
+			"weapon_vj_css_awp",
+			"weapon_vj_css_scout",
+			"weapon_vj_css_m249",
+		}
+
+		local CT_SEC = {
+			"weapon_vj_css_deagle",
+			"weapon_vj_css_dualelite",
+			"weapon_vj_css_p228",
+			"weapon_vj_css_fiveseven",
+			"weapon_vj_css_usp",
+		}
+		
+		local T_PRI = {
+			"weapon_vj_css_ak47",
+			"weapon_vj_css_mac10",
+			"weapon_vj_css_galil",
+			"weapon_vj_css_sg552",
+			"weapon_vj_css_m3super",
+			"weapon_vj_css_xm1014",
+			"weapon_vj_css_mp5",
+			"weapon_vj_css_p90",
+			"weapon_vj_css_ump",
+			"weapon_vj_css_awp",
+			"weapon_vj_css_scout",
+			"weapon_vj_css_m249",
+		}
+
+		local T_SEC = {
+			"weapon_vj_css_deagle",
+			"weapon_vj_css_dualelite",
+			"weapon_vj_css_p228",
+			"weapon_vj_css_glock",
+		}
+
+		net.Receive("vj_css_teams",function(len,ply)
+			local team = net.ReadInt(8)
+			local ply = net.ReadEntity()
+
+			ply:SetHealth(100)
+			ply:SetArmor(100)
+
+			local function GiveWep(wep,draw)
+				ply.VJ_CanBePickedUpWithOutUse = true
+				ply.VJ_CanBePickedUpWithOutUse_Class = wep
+				ply:Give(wep)
+				if draw then
+					ply:SelectWeapon(wep)
+				end
+			end
+
+			ply:StripWeapons()
+			GiveWep(VJ_PICK(team == 1 && CT_PRI or team == 2 && T_PRI),true)
+			GiveWep(VJ_PICK(team == 1 && CT_SEC or team == 2 && T_SEC))
+			GiveWep("weapon_vj_css_knife")
+
+			local tblCT = {
+				"models/player/gasmask.mdl",
+				"models/player/riot.mdl",
+				"models/player/urban.mdl",
+				"models/player/swat.mdl"
+			}
+			local tblT = {
+				"models/player/arctic.mdl",
+				"models/player/guerilla.mdl",
+				"models/player/leet.mdl",
+				"models/player/phoenix.mdl"
+			}
+			ply:SetModel(VJ_PICK(team == 1 && tblCT or team == 2 && tblT))
+			ply:SetupHands(ply)
+			local data = player_manager.TranslatePlayerHands(ply:GetModel())
+			local hands = ply:GetHands()
+			hands:SetModel(data.model)
+			hands:SetSkin(data.skin)
+			hands:SetBodyGroups(data.body)
+
+			ply.VJ_NPC_Class = {team == 1 && "CLASS_CSS_CT" or team == 2 && "CLASS_CSS_T"}
+		end)
+	end
+
+	if CLIENT then
+		function VJ_SetTeams()
+			local ply = LocalPlayer()
+			net.Start("vj_css_teams")
+				net.WriteInt(ply:GetInfoNum("vj_css_team",0),8)
+				net.WriteEntity(ply)
+			net.SendToServer()
+		end
+	end
 
 	game.AddDecal("VJ_CSS_BombSite",{"cstrike/target"})
 	game.AddDecal("VJ_CSS_BombSiteA",{"cstrike/siteA"})
@@ -144,6 +268,45 @@ if VJExists == true then
 	-- VJ.AddNPCWeapon("VJ_CSS_AWP","weapon_vj_css_awp")
 	-- VJ.AddNPCWeapon("VJ_CSS_Knife","weapon_vj_css_knife")
 	
+	local NPC = FindMetaTable("NPC")
+	
+	function VJ_GetNavAreas(dist,argent)
+		if dist && IsValid(argent) then
+			local tbl = {}
+			local aPos = argent:GetPos()
+			for _,CNavArea in pairs(navmesh.GetAllNavAreas()) do
+				if CNavArea && CNavArea:GetClosestPointOnArea(aPos):Distance(aPos) <= dist then
+					table.insert(tbl,CNavArea)
+				end
+			end
+			return tbl
+		end
+		return navmesh.GetAllNavAreas()
+	end
+	
+	function VJ_FindHidingSpots(dist,argent,hide)
+		local navareas = VJ_GetNavAreas(dist,argent)
+		local foundAreas = {}
+		for _,v in pairs(navareas) do
+			if v:IsUnderwater() then return end
+			for _,vec in pairs(v:GetHidingSpots(hide != true && 8 or nil)) do
+				table.insert(foundAreas,Vector(vec.x,vec.y,vec.z))
+			end
+		end
+		return foundAreas
+	end
+	
+	-- function VJ_FindHidingSpots(type,dist,argent)
+		-- local navareas = VJ_GetNavAreas(dist,argent)
+		-- local foundAreas = {}
+		-- for _,area in pairs(navareas) do
+			-- for _,hidingSpot in pairs(area:GetHidingSpots(1)) do
+				-- table.insert(foundAreas,spot)
+			-- end
+		-- end
+		-- return foundAreas
+	-- end
+
 	usermessage.Hook("VJ_CSS_ScreenFadeFX",function(data)
 		local ply = data:ReadEntity()
 		if !IsValid(ply) then return end

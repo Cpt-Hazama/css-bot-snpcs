@@ -30,7 +30,7 @@ ENT.TeamColor = {[1]=Color(0,0,255),[2]=Color(255,0,0)}
 ENT.Team = 2
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:Initialize()
-	self:SetModel("models/props_junk/garbage_carboard002a.mdl")
+	self:SetModel("models/player/arctic.mdl")
 	self:PhysicsInit(SOLID_VPHYSICS)
 	self:SetMoveType(MOVETYPE_NONE)
 	self:SetSolid(SOLID_VPHYSICS)
