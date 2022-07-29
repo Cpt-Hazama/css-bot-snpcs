@@ -7,6 +7,8 @@ SWEP.Contact							= ""
 SWEP.Purpose							= ""
 SWEP.Category							= "VJ Base - Counter-Strike: Source"
 
+SWEP.CSS_ID 							= "MP5"
+
 SWEP.Primary.Delay						= 0.09
 SWEP.Primary.Automatic 					= true
 SWEP.ViewModel							= "models/weapons/cstrike/c_smg_mp5.mdl"

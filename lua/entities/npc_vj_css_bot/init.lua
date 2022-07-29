@@ -8,25 +8,40 @@ include('shared.lua')
 ENT.Model = {"models/player/kleiner.mdl"}
 ENT.StartHealth = 100
 ENT.HullType = HULL_HUMAN
-ENT.BloodColor = "Red"
-ENT.HasMeleeAttack = false
+ENT.UsePlayerModelMovement = true
 ENT.PoseParameterLooking_Names = {pitch={"aim_pitch"},yaw={"aim_yaw"},roll={}}
-ENT.FootStepTimeRun = 0.3
-ENT.FootStepTimeWalk = 0.5
 
-ENT.HasGrenadeAttack = true
-ENT.GrenadeAttackEntity = "obj_vj_grenade"
+ENT.BloodColor = "Red"
+
+ENT.HasMeleeAttack = false
+
+-- ENT.DisableWeaponFiringGesture = true
+
+ENT.TimeUntilGrenadeIsReleased = 0.85 -- Time until the grenade is released
 ENT.GrenadeAttackModel = "models/weapons/w_eq_fraggrenade_thrown.mdl"
-ENT.AnimTbl_GrenadeAttack = {"idle_grenade"}
-ENT.TimeUntilGrenadeIsReleased = 0.7
+ENT.AnimTbl_GrenadeAttack = {"vjges_gesture_item_throw"}
 ENT.GrenadeAttackAttachment = "anim_attachment_RH"
+
+ENT.AnimTbl_Medic_GiveHealth = {"vjges_gesture_item_drop"}
+ENT.AnimTbl_CallForHelp = {"vjges_gesture_signal_group","vjges_gesture_signal_forward"}
+ENT.CallForBackUpOnDamageAnimation = {"vjges_gesture_signal_halt"}
 
 ENT.NextMoveRandomlyWhenShootingTime1 = 2
 ENT.NextMoveRandomlyWhenShootingTime2 = 3
 
-ENT.HasCallForHelpAnimation = false
-ENT.AnimTbl_CallForHelp = {0}
-ENT.CallForBackUpOnDamageAnimation = {0}
+ENT.CanFlinch = 1
+ENT.NextFlinchTime = 3
+ENT.AnimTbl_Flinch = {"vjges_flinch_01","vjges_flinch_02"}
+ENT.HitGroupFlinching_Values = {
+	{HitGroup = {HITGROUP_HEAD}, Animation = {"vjges_flinch_head_01","vjges_flinch_head_02"}},
+	{HitGroup = {HITGROUP_CHEST}, Animation = {"vjges_flinch_phys_01","vjges_flinch_phys_02","vjges_flinch_back_01"}},
+	{HitGroup = {HITGROUP_STOMACH}, Animation = {"vjges_flinch_stomach_01","vjges_flinch_stomach_02"}},
+	{HitGroup = {HITGROUP_LEFTARM}, Animation = {"vjges_flinch_shoulder_l"}},
+	{HitGroup = {HITGROUP_RIGHTARM}, Animation = {"vjges_flinch_shoulder_r"}}
+}
+
+ENT.FootStepTimeRun = 0.3
+ENT.FootStepTimeWalk = 0.5
 
 ENT.SoundTbl_IdleDialogue = {
 	"radio/com_getinpos.wav",
@@ -365,7 +380,8 @@ local c = 0
 local debug = false
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:GetSightDirection()
-	return self:GetAttachment(self:LookupAttachment("eyes")).Ang:Forward()
+    local att = self:LookupAttachment("eyes") -- Not all models have it, must check for validity
+    return att != 0 && self:GetAttachment(att).Ang:Forward() or self:GetForward()
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:CustomOnFootStepSound()
@@ -450,6 +466,7 @@ function ENT:CustomOnInitialize()
 	self:DecideName()
 	PrintMessage(HUD_PRINTTALK,self:GetName() .. " has connected")
 	
+	self.CurrentAnimationSet = nil
 	self.CurrentHoldType = "none"
 	self.CurrentFireType = 1
 	self.Kevlar = 100
@@ -460,6 +477,7 @@ function ENT:CustomOnInitialize()
 	self.NextObjectiveT = CurTime()
 	self.RanBombInit = false
 	self.NextSetMoveT = 0
+	self.NextRefreshAnimT = 0
 	self.Hostages = {}
 
 	self.NextSwitchT = CurTime() +1
@@ -477,7 +495,6 @@ function ENT:CustomOnInitialize()
 		self.Team = self.VJ_NPC_Class[1] == "CLASS_CSS_CT" && 1 or 2
 		self.GM = true
 	end
-	
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:CalculateKevlar(dmginfo,hitgroup)
@@ -563,191 +580,540 @@ function ENT:DecideName()
 	self.PrintName = "[Bot] " .. name
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-function ENT:SetAnimData(idle,crouch,crouch_move,walk,run,fire,reload,jump)
-	if type(idle) == "string" then idle = VJ_SequenceToActivity(self,idle) end
-	if type(crouch) == "string" then crouch = VJ_SequenceToActivity(self,crouch) end
-	if type(crouch_move) == "string" then crouch_move = VJ_SequenceToActivity(self,crouch_move) end
-	if type(walk) == "string" then walk = VJ_SequenceToActivity(self,walk) end
-	if type(run) == "string" then run = VJ_SequenceToActivity(self,run) end
-	if type(fire) == "string" then fire = VJ_SequenceToActivity(self,fire) end
-	if type(reload) == "string" then reload = VJ_SequenceToActivity(self,reload) end
-	if type(jump) == "string" then jump = VJ_SequenceToActivity(self,jump) end
+function ENT:DoApplyAnimations(animSet,autoPlayAnim)
+	if self.CurrentAnimationSet == animSet then
+		return
+	end
+	-- if self.CurrentAnimationSet != animSet then
+	-- 	self.NextRefreshAnimT = 0
+	-- 	print("Reset")
+	-- end
+	-- if CurTime() < self.NextRefreshAnimT then
+	-- 	return
+	-- end
 
-	self.WeaponAnimTranslations[ACT_IDLE] 							= idle
-	self.WeaponAnimTranslations[ACT_WALK] 							= walk
-	self.WeaponAnimTranslations[ACT_RUN] 							= run
-	self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= idle
-	self.WeaponAnimTranslations[ACT_WALK_AIM] 						= walk
-	self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= crouch_move
-	self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= crouch_move
-	self.WeaponAnimTranslations[ACT_RUN_AIM] 						= run
-	self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= crouch_move
-	self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= crouch_move
-	self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= idle
-	self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= fire
-	self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= crouch
-	self.WeaponAnimTranslations[ACT_RELOAD]							= "vjges_" .. VJ_GetSequenceName(self,reload)
-	self.WeaponAnimTranslations[ACT_COVER_LOW] 						= crouch
-	self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_" .. VJ_GetSequenceName(self,reload)
-	self.WeaponAnimTranslations[ACT_JUMP] 							= jump
+	local wep = self:GetActiveWeapon()
+	local wepID = wep.CSS_ID or "AUG"
+
+	self.Layers = {}
+	self:RemoveAllGestures()
+
+	self.Layers.IdleUpper = self:VJ_AddLayeredAnimation(animSet .. "Upper_" .. wepID,false)
+	self.Layers.BodyOffset = self:VJ_AddLayeredAnimation((autoPlayAnim or animSet) .. "BodyOffset_" .. wepID,false)
+	self.Layers.HandPos = self:VJ_AddLayeredAnimation((autoPlayAnim or animSet) .. "HandPos_" .. wepID,false)
+
+	self:SetLayerWeight(self.Layers.IdleUpper,1)
+
+	-- local body = self:VJ_AddLayeredAnimation((autoPlayAnim or animSet) .. "BodyOffset_" .. wepID,false,1)
+	-- local hand = self:VJ_AddLayeredAnimation((autoPlayAnim or animSet) .. "HandPos_" .. wepID,false,1)
+	-- local main = self:VJ_AddLayeredAnimation(animSet .. "Upper_" .. wepID,false,1)
+
+	-- self.NextRefreshAnimT = CurTime() +(0.25)
+
+
+	print("------------------------------------------------------")
+	print(animSet .. "Upper_" .. wepID)
+	print(animSet .. "BodyOffset_" .. wepID)
+	print(animSet .. "HandPos_" .. wepID)
+
+	self.CurrentAnimationSet = animSet
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-function ENT:CustomOnSetupWeaponHoldTypeAnims(htype)
-	self.CurrentHoldType = htype
-	local idle = ACT_HL2MP_IDLE
-	local walk = ACT_HL2MP_WALK
-	local crouch_move = ACT_HL2MP_WALK_CROUCH
-	local run = ACT_HL2MP_RUN
-	local fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_FIST
-	local crouch = ACT_HL2MP_IDLE_CROUCH
-	local reload = ACT_HL2MP_GESTURE_RELOAD_PISTOL
-	if htype == "ar2" && self:GetActiveWeapon().CS_HType != "mach" then
-		idle = ACT_HL2MP_IDLE_AR2
-		walk = ACT_HL2MP_WALK_AR2
-		crouch_move = ACT_HL2MP_WALK_CROUCH_AR2
-		run = ACT_HL2MP_RUN_AR2
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_AR2
-		crouch = ACT_HL2MP_IDLE_CROUCH_AR2
-		reload = ACT_HL2MP_GESTURE_RELOAD_AR2
-		jump = ACT_HL2MP_JUMP_AR2
-	elseif htype == "smg" && self:GetActiveWeapon().CS_HType != "mac" then
-		idle = ACT_HL2MP_IDLE_SMG1
-		walk = ACT_HL2MP_WALK_SMG1
-		crouch_move = ACT_HL2MP_WALK_CROUCH_SMG1
-		run = ACT_HL2MP_RUN_SMG1
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_SMG1
-		crouch = ACT_HL2MP_IDLE_CROUCH_SMG1
-		reload = ACT_HL2MP_GESTURE_RELOAD_SMG1
-		jump = ACT_HL2MP_JUMP_SMG1
-	elseif htype == "shotgun" then
-		idle = ACT_HL2MP_IDLE_SHOTGUN
-		walk = ACT_HL2MP_WALK_SHOTGUN
-		crouch_move = ACT_HL2MP_WALK_CROUCH_SHOTGUN
-		run = ACT_HL2MP_RUN_SHOTGUN
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_SHOTGUN
-		crouch = ACT_HL2MP_IDLE_CROUCH_SHOTGUN
-		reload = ACT_HL2MP_GESTURE_RELOAD_SHOTGUN
-		jump = ACT_HL2MP_JUMP_SHOTGUN
-	elseif htype == "rpg" then
-		idle = ACT_HL2MP_IDLE_RPG
-		walk = ACT_HL2MP_WALK_RPG
-		crouch_move = ACT_HL2MP_WALK_CROUCH_RPG
-		run = ACT_HL2MP_RUN_RPG
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_RPG
-		crouch = ACT_HL2MP_IDLE_CROUCH_RPG
-		reload = ACT_HL2MP_GESTURE_RELOAD_RPG
-		jump = ACT_HL2MP_JUMP_RPG
-	elseif htype == "pistol" then
-		idle = ACT_HL2MP_IDLE_REVOLVER
-		walk = ACT_HL2MP_WALK_REVOLVER
-		crouch_move = ACT_HL2MP_WALK_CROUCH_PISTOL
-		run = ACT_HL2MP_RUN_REVOLVER
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_PISTOL
-		crouch = ACT_HL2MP_IDLE_CROUCH_PISTOL
-		reload = ACT_HL2MP_GESTURE_RELOAD_PISTOL
-		jump = ACT_HL2MP_JUMP_REVOLVER
-	elseif htype == "dual" then
-		idle = "idle_dual"
-		walk = "walk_dual"
-		crouch_move = "cwalk_dual"
-		run = "run_dual"
-		fire = "range_dual_r"
-		crouch = "cidle_dual"
-		reload = "reload_dual"
-		jump = "jump_dual"
-	elseif htype == "revolver" then
-		idle = ACT_HL2MP_IDLE_REVOLVER
-		walk = ACT_HL2MP_WALK_REVOLVER
-		crouch_move = ACT_HL2MP_WALK_CROUCH_REVOLVER
-		run = ACT_HL2MP_RUN_REVOLVER
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_REVOLVER
-		crouch = ACT_HL2MP_IDLE_CROUCH_REVOLVER
-		reload = ACT_HL2MP_GESTURE_RELOAD_REVOLVER
-		jump = ACT_HL2MP_JUMP_REVOLVER
-	elseif htype == "crossbow" then
-		idle = ACT_HL2MP_IDLE_CROSSBOW
-		walk = ACT_HL2MP_WALK_CROSSBOW
-		crouch_move = ACT_HL2MP_WALK_CROUCH_CROSSBOW
-		run = ACT_HL2MP_RUN_CROSSBOW
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_CROSSBOW
-		crouch = ACT_HL2MP_IDLE_CROUCH_CROSSBOW
-		reload = ACT_HL2MP_GESTURE_RELOAD_CROSSBOW
-		jump = ACT_HL2MP_JUMP_CROSSBOW
-	elseif htype == "knife" then
-		idle = ACT_HL2MP_IDLE_KNIFE
-		walk = ACT_HL2MP_WALK_KNIFE
-		crouch_move = ACT_HL2MP_WALK_CROUCH_KNIFE
-		run = ACT_HL2MP_RUN_KNIFE
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_KNIFE
-		crouch = ACT_HL2MP_IDLE_CROUCH_KNIFE
-		reload = ACT_HL2MP_GESTURE_RELOAD_KNIFE
-		jump = ACT_HL2MP_JUMP_KNIFE
-	elseif htype == "grenade" then
-		idle = ACT_HL2MP_IDLE_GRENADE
-		walk = ACT_HL2MP_WALK_GRENADE
-		crouch_move = ACT_HL2MP_WALK_CROUCH_GRENADE
-		run = ACT_HL2MP_RUN_GRENADE
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE
-		crouch = ACT_HL2MP_IDLE_CROUCH_GRENADE
-		reload = ACT_HL2MP_GESTURE_RELOAD_GRENADE
-		jump = ACT_HL2MP_JUMP_GRENADE
-	elseif htype == "melee" then
-		idle = ACT_HL2MP_IDLE_MELEE
-		walk = ACT_HL2MP_WALK_MELEE
-		crouch_move = ACT_HL2MP_WALK_CROUCH_MELEE
-		run = ACT_HL2MP_RUN_MELEE
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE
-		crouch = ACT_HL2MP_IDLE_CROUCH_MELEE
-		reload = ACT_HL2MP_GESTURE_RELOAD_MELEE
-		jump = ACT_HL2MP_JUMP_MELEE
-	elseif htype == "melee_angry" then
-		idle = "idle_melee_angry"
-		walk = ACT_HL2MP_WALK_MELEE
-		crouch_move = ACT_HL2MP_WALK_CROUCH_MELEE
-		run = ACT_HL2MP_RUN_MELEE
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE
-		crouch = ACT_HL2MP_IDLE_CROUCH_MELEE
-		reload = ACT_HL2MP_GESTURE_RELOAD_MELEE
-		jump = ACT_HL2MP_JUMP_MELEE
-	elseif htype == "melee2" then
-		idle = ACT_HL2MP_IDLE_MELEE2
-		walk = ACT_HL2MP_WALK_MELEE2
-		crouch_move = ACT_HL2MP_WALK_CROUCH_MELEE2
-		run = ACT_HL2MP_RUN_MELEE2
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE2
-		crouch = ACT_HL2MP_IDLE_CROUCH_MELEE2
-		reload = ACT_HL2MP_GESTURE_RELOAD_MELEE2
-		jump = ACT_HL2MP_JUMP_MELEE2
-	elseif htype == "physgun" then
-		idle = ACT_HL2MP_IDLE_PHYSGUN
-		walk = ACT_HL2MP_WALK_PHYSGUN
-		crouch_move = ACT_HL2MP_WALK_CROUCH_PHYSGUN
-		run = ACT_HL2MP_RUN_PHYSGUN
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_PHYSGUN
-		crouch = ACT_HL2MP_IDLE_CROUCH_PHYSGUN
-		reload = ACT_HL2MP_GESTURE_RELOAD_PHYSGUN
-		jump = ACT_HL2MP_JUMP_PHYSGUN
-	elseif htype == "ar2" && self:GetActiveWeapon().CS_HType == "mach" then
-		idle = ACT_HL2MP_IDLE_SHOTGUN
-		walk = ACT_HL2MP_WALK_SHOTGUN
-		crouch_move = ACT_HL2MP_WALK_CROUCH_SHOTGUN
-		run = ACT_HL2MP_RUN_SHOTGUN
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_AR2
-		crouch = ACT_HL2MP_IDLE_CROUCH_SHOTGUN
-		reload = ACT_HL2MP_GESTURE_RELOAD_SMG1
-		jump = ACT_HL2MP_JUMP_SHOTGUN
-	elseif htype == "smg" && self:GetActiveWeapon().CS_HType == "mac" then
-		idle = ACT_HL2MP_IDLE_REVOLVER
-		walk = ACT_HL2MP_WALK_REVOLVER
-		crouch_move = ACT_HL2MP_WALK_CROUCH_REVOLVER
-		run = ACT_HL2MP_RUN_REVOLVER
-		fire = ACT_HL2MP_GESTURE_RANGE_ATTACK_PISTOL
-		crouch = ACT_HL2MP_IDLE_CROUCH_REVOLVER
-		reload = ACT_HL2MP_GESTURE_RELOAD_REVOLVER
-		jump = ACT_HL2MP_JUMP_REVOLVER
+function ENT:SetParameters()
+	local curSched = self.CurrentSchedule
+	local moveType = curSched != nil && curSched.MoveType or false
+	local shouldAim = self.DoingWeaponAttack
+	local shouldCrouch = self.TakingCoverT > CurTime() or curSched != nil && curSched.Name == "vj_goto_cover"
+	local targetAnim = "Idle_"
+	local autoPlayAnim = "Idle_"
+
+	if shouldAim then
+		if moveType then
+			targetAnim = moveType == 1 && "Run_Aim_" or "Walk_Aim_"
+		else
+			targetAnim = "Idle_Aim_"
+			if shouldCrouch then
+				targetAnim = "Crouch_Aim_"
+			end
+		end
+	else
+		if moveType then
+			targetAnim = moveType == 1 && "Run_" or "Walk_"
+		else
+			targetAnim = "Idle_"
+			if shouldCrouch then
+				targetAnim = "Crouch_Idle_"
+				autoPlayAnim = "Crouch_"
+			end
+		end
 	end
-	self:SetAnimData(idle,crouch,crouch_move,walk,run,fire,reload,jump)
+
+	if self.Layers then
+		for _,v in pairs(self.Layers) do
+			if v && self:GetLayerCycle(v) == 1 then
+				self:SetLayerCycle(v,0)
+			end
+		end
+	end
+
+	self:DoApplyAnimations(targetAnim,autoPlayAnim)
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:CustomOnSetupWeaponHoldTypeAnims(hType)
+	local wep = self:GetActiveWeapon()
+	local wepID = wep.CSS_ID or "AK"
+
+	self.CurrentHoldType = htype
+	
+	if hType == "ar2" && wep.CS_HType != "mach" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_AR2
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_AR2
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_AR2
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_AR2
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_AR2
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_AR2
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_AR2
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_AR2
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_AR2
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_AR2
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_AR2
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_AR2
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_AR2
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_AR2
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_AR2
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_AR2
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_AR2
+	elseif hType == "ar2" && wep.CS_HType == "mach" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_CROSSBOW
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_AR2
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_CROSSBOW
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_CROSSBOW
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_CROSSBOW
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_CROSSBOW
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_CROSSBOW
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_CROSSBOW
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_CROSSBOW
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_CROSSBOW
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_CROSSBOW
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_CROSSBOW
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_CROSSBOW
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_WALK_CROSSBOW
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_WALK_CROSSBOW
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_CROSSBOW
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_CROSSBOW
+	elseif hType == "pistol" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_PISTOL
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_PISTOL
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_PISTOL
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_PISTOL
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_PISTOL
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_PISTOL
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_PISTOL
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_PISTOL
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_PISTOL
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_PISTOL
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_PISTOL
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_PISTOL
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_PISTOL
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_PISTOL
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_PISTOL
+	elseif hType == "smg" && wep.CS_HType != "mac" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_SMG1
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_SMG1
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_SMG1
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_smg1"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_smg1"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_SMG1
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_SMG1
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_SMG1
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_SMG1
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_SMG1
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_SMG1
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_SMG1
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_SMG1
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_SMG1
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_SMG1
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_SMG1
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_SMG1
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_SMG1
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_SMG1
+	elseif hType == "smg" && wep.CS_HType == "mac" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_REVOLVER
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_PISTOL
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_REVOLVER
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_REVOLVER
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_REVOLVER
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_REVOLVER
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_REVOLVER
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_REVOLVER
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_REVOLVER
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_REVOLVER
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_REVOLVER
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_REVOLVER
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_REVOLVER
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_REVOLVER
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_REVOLVER
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_REVOLVER
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_REVOLVER
+	elseif hType == "grenade" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_GRENADE
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_GRENADE
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_GRENADE
+		-- self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_pistol"
+		-- self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_GRENADE
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_GRENADE
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_GRENADE
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_GRENADE
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_GRENADE
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_GRENADE
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_GRENADE
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_GRENADE
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_GRENADE
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_GRENADE
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_GRENADE
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_GRENADE
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_GRENADE
+	elseif hType == "shotgun" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_SHOTGUN
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_SHOTGUN
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_SHOTGUN
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_shotgun"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_shotgun"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_SHOTGUN
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_SHOTGUN
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_SHOTGUN
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_SHOTGUN
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_SHOTGUN
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_SHOTGUN
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_SHOTGUN
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_SHOTGUN
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_SHOTGUN
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_SHOTGUN
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_SHOTGUN
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_SHOTGUN
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_SHOTGUN
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_SHOTGUN
+	elseif hType == "rpg" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_RPG
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_RPG
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_RPG
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_RPG
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_RPG
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_RPG
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_RPG
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_RPG
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_RPG
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_RPG
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_RPG
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_RPG
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_RPG
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_RPG
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_RPG
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_RPG
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_RPG
+	elseif hType == "physgun" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_PHYSGUN
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_SHOTGUN
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_PHYSGUN
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_PHYSGUN
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_PHYSGUN
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_PHYSGUN
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_PHYSGUN
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_PHYSGUN
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_PHYSGUN
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_PHYSGUN
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_PHYSGUN
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_PHYSGUN
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_PHYSGUN
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_PHYSGUN
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_PHYSGUN
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_PHYSGUN
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_PHYSGUN
+	elseif hType == "crossbow" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_CROSSBOW
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_CROSSBOW
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_CROSSBOW
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_ar2"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_CROSSBOW
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_JUMP_CROSSBOW
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_CROSSBOW
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_CROSSBOW
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_CROSSBOW
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_CROSSBOW
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_CROSSBOW
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_CROSSBOW
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_CROSSBOW
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_CROSSBOW
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_CROSSBOW
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_CROSSBOW
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_CROSSBOW
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_CROSSBOW
+	elseif hType == "slam" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_SLAM
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_SLAM
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_SLAM
+		-- self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_pistol"
+		-- self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_SLAM
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_SLAM
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_SLAM
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_SLAM
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_SLAM
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_SLAM
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_SLAM
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_SLAM
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_SLAM
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_SLAM
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_SLAM
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_SLAM
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_SLAM
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_SLAM
+	elseif hType == "duel" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_DUEL
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_DUEL
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_DUEL
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_duel"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_duel"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_DUEL
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_DUEL
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_DUEL
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_DUEL
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_DUEL
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_DUEL
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_DUEL
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_DUEL
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_DUEL
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_DUEL
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_DUEL
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_DUEL
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_DUEL
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_DUEL
+	elseif hType == "revolver" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_REVOLVER
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_REVOLVER
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_REVOLVER
+		self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_revolver"
+		self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_revolver"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_REVOLVER
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_REVOLVER
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_REVOLVER
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_REVOLVER
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_REVOLVER
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_REVOLVER
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_REVOLVER
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_REVOLVER
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_REVOLVER
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_REVOLVER
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_REVOLVER
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_REVOLVER
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_REVOLVER
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_REVOLVER
+	elseif hType == "melee" or hType == "melee_angry" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_MELEE
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_MELEE
+		-- self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_pistol"
+		-- self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_MELEE
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_MELEE
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_MELEE
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_MELEE
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_MELEE
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_MELEE
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_MELEE
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_MELEE
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_MELEE
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_MELEE
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_MELEE
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_MELEE
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_MELEE
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_MELEE
+	elseif hType == "melee2" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_MELEE2
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE2
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_MELEE2
+		-- self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_pistol"
+		-- self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_MELEE2
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_MELEE2
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_MELEE2
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_MELEE2
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_MELEE2
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_MELEE2
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_MELEE2
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_MELEE2
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_MELEE2
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_MELEE2
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_MELEE2
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_MELEE2
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_MELEE2
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_MELEE2
+	elseif hType == "knife" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_KNIFE
+		self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_KNIFE
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_KNIFE
+		-- self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_pistol"
+		-- self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_KNIFE
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_KNIFE
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_KNIFE
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_KNIFE
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_KNIFE
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_KNIFE
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_KNIFE
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_KNIFE
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_KNIFE
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_KNIFE
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_KNIFE
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_KNIFE
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_KNIFE
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_KNIFE
+	elseif hType == "camera" then
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_HL2MP_IDLE_CAMERA
+		-- self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= ACT_HL2MP_GESTURE_RANGE_ATTACK_CAMERA
+		self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_HL2MP_IDLE_CROUCH_CAMERA
+		-- self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_reload_pistol"
+		-- self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_reload_pistol"
+		self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_HL2MP_IDLE_CROUCH_CAMERA
+		
+		self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_HL2MP_IDLE_CAMERA
+		self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_HL2MP_IDLE_CAMERA
+		self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HL2MP_JUMP_CAMERA
+		self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HL2MP_JUMP_CAMERA
+		self.WeaponAnimTranslations[ACT_LAND] 							= ACT_HL2MP_IDLE_CAMERA
+		
+		self.WeaponAnimTranslations[ACT_WALK] 							= ACT_HL2MP_WALK_CAMERA
+		self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_HL2MP_WALK_CAMERA
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_CAMERA
+		self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_CAMERA
+		
+		self.WeaponAnimTranslations[ACT_RUN] 							= ACT_HL2MP_RUN_CAMERA
+		self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_HL2MP_RUN_CAMERA
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_HL2MP_WALK_CROUCH_CAMERA
+		self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_HL2MP_WALK_CROUCH_CAMERA
+	end
+
 	return true
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
+-- function ENT:CustomOnSetupWeaponHoldTypeAnims(hType)
+-- 	local wep = self:GetActiveWeapon()
+-- 	local wepID = wep.CSS_ID or "AK"
+
+-- 	self.CurrentHoldType = htype
+-- 	self.AnimationParameters = {}
+
+-- 	self.WeaponAnimTranslations[ACT_RANGE_ATTACK1] 					= ACT_IDLE
+-- 	self.WeaponAnimTranslations[ACT_RANGE_ATTACK1_LOW] 				= ACT_CROUCHIDLE
+-- 	self.WeaponAnimTranslations[ACT_COVER_LOW] 						= ACT_CROUCHIDLE
+	
+-- 	self.WeaponAnimTranslations[ACT_IDLE] 							= ACT_IDLE
+-- 	self.WeaponAnimTranslations[ACT_IDLE_ANGRY] 					= ACT_IDLE
+-- 	self.WeaponAnimTranslations[ACT_JUMP] 							= ACT_HOP
+-- 	self.WeaponAnimTranslations[ACT_GLIDE] 							= ACT_HOP
+-- 	self.WeaponAnimTranslations[ACT_LAND] 							= ACT_IDLE
+	
+-- 	self.WeaponAnimTranslations[ACT_WALK] 							= ACT_WALK
+-- 	self.WeaponAnimTranslations[ACT_WALK_AIM] 						= ACT_WALK
+-- 	self.WeaponAnimTranslations[ACT_WALK_CROUCH] 					= ACT_RUN_CROUCH
+-- 	self.WeaponAnimTranslations[ACT_WALK_CROUCH_AIM] 				= ACT_RUN_CROUCH
+	
+-- 	self.WeaponAnimTranslations[ACT_RUN] 							= ACT_RUN
+-- 	self.WeaponAnimTranslations[ACT_RUN_AIM] 						= ACT_RUN
+-- 	self.WeaponAnimTranslations[ACT_RUN_CROUCH] 					= ACT_RUN_CROUCH
+-- 	self.WeaponAnimTranslations[ACT_RUN_CROUCH_AIM] 				= ACT_RUN_CROUCH
+
+-- 	self.WeaponAnimTranslations[ACT_GESTURE_RANGE_ATTACK1] 			= "vjges_Idle_Shoot_" .. wepID
+-- 	self.WeaponAnimTranslations[ACT_RELOAD] 						= "vjges_Idle_Reload_" .. wepID
+-- 	self.WeaponAnimTranslations[ACT_RELOAD_LOW] 					= "vjges_Crouch_Idle_Reload_" .. wepID
+
+-- 	self.AnimationParameters = {
+-- 		BodyOffset = "BodyOffset_" .. wepID,
+-- 		HandOffset = "HandPos_" .. wepID,
+-- 		Idle = "Idle_Upper_" .. wepID,
+-- 		Aim = "Idle_Aim_" .. wepID,
+-- 		Shoot = "Idle_Shoot_" .. wepID,
+-- 		Reload = "Idle_Reload_" .. wepID,
+
+-- 		RefreshTime = VJ_GetSequenceDuration(self,"Idle_Upper_" .. wepID)
+-- 	}
+
+-- 	return true
+-- end
+---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:OnPlayCreateSound(sdData, sdFile)
+	if VJ_HasValue(self.SoundTbl_Pain, sdFile) or VJ_HasValue(self.SoundTbl_Death, sdFile) or VJ_HasValue(self.DefaultSoundTbl_MeleeAttack, sdFile) then return end
+	self:SetSpeaking(true)
+	timer.Simple(SoundDuration(sdFile),function()
+		if IsValid(self) && sdData:IsPlaying() then
+			self:SetSpeaking(false)
+		end
+	end)
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:OnFireBullet(ent,data)
@@ -780,22 +1146,6 @@ end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:BotChat(text)
 	PrintMessage(HUD_PRINTTALK,self:GetName() .. ": " .. tostring(text))
-end
----------------------------------------------------------------------------------------------------------------------------------------------
-function ENT:DecideXY()
-	local moveData = self:GetMoveDirection(true)
-	self:SetPoseParameter("move_x",moveData.x)
-	self:SetPoseParameter("move_y",moveData.y)
-
-	self.LastMoveData = moveData
-end
----------------------------------------------------------------------------------------------------------------------------------------------
-function ENT:GetMoveDirection(ignoreZ)
-	if not self:IsMoving() then return Vector(0,0,0) end
-	local waypoint = self:GetCurWaypointPos() or self:GetPos()
-	local dir = (waypoint -self:GetPos())
-	if ignoreZ then dir.z = 0 end
-	return (self:GetAngles() -dir:Angle()):Forward()
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:PlantTheBomb()
@@ -842,17 +1192,13 @@ function ENT:GoToSpot(dist,argent,hide)
 	return foundPos
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-function ENT:CS_FacePosition(pos)
-	local setangs = (pos -self:GetPos()):Angle()
-	self:SetAngles(Angle(self:GetAngles().x,setangs.y,self:GetAngles().z))
-	self:SetIdealYawAndUpdate(setangs.y)
-end
----------------------------------------------------------------------------------------------------------------------------------------------
 local defOffset = Vector(0,0,10)
 function ENT:CustomOnThink()
+	self:SetArrivalSpeed(9999)
+	-- self:SetParameters() -- Layers won't loop for some reason despite being set to and other alternatives...
+	
 	debug = tobool(GetConVarNumber("vj_css_bot_debug"))
 	local controller = self.VJ_TheController
-	self:DecideXY()
 	if self.HasTheBomb && !self.RanBombInit then
 		self:BombInit()
 		self.RanBombInit = true
@@ -897,12 +1243,6 @@ function ENT:CustomOnThink()
 			self.Bomb:SetPos(bonepos +self:GetForward() *-3 +self:GetUp() *-4)
 			self.Bomb:SetAngles(boneang +Angle(-20,90,15))
 			self.Bomb:SetCollisionGroup(COLLISION_GROUP_IN_VEHICLE)
-		end
-	end
-	if self:IsMoving() then
-		if !self.DoingWeaponAttack && self:GetPos():Distance(self:GetCurWaypointPos()) > 75 then
-			-- self:FaceCertainPosition(IsValid(controller) && self:GetEnemy():GetPos() or self:GetCurWaypointPos())
-			self:CS_FacePosition(IsValid(controller) && self:GetEnemy():GetPos() or self:GetCurWaypointPos())
 		end
 	end
 	if debug then

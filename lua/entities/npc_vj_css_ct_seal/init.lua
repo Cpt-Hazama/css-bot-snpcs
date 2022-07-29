@@ -6,6 +6,7 @@ include('shared.lua')
 	without the prior written consent of the author, unless otherwise indicated for stand-alone materials.
 -----------------------------------------------*/
 ENT.Model = {"models/player/urban.mdl"}
+-- ENT.Model = {"models/player/ct_urban.mdl"}
 ENT.VJ_NPC_Class = {"CLASS_CSS_CT"} -- NPCs with the same class with be allied to each other
 -- ENT.PlayerFriendly = true
 -- ENT.FriendsWithAllPlayerAllies = true

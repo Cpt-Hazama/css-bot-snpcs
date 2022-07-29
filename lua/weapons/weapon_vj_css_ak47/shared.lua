@@ -7,6 +7,8 @@ SWEP.Contact							= ""
 SWEP.Purpose							= ""
 SWEP.Category							= "VJ Base - Counter-Strike: Source"
 
+SWEP.CSS_ID 							= "AK"
+
 SWEP.ViewModel							= "models/weapons/cstrike/c_rif_ak47.mdl"
 SWEP.WorldModel							= "models/weapons/w_rif_ak47.mdl"
 SWEP.HoldType 							= "ar2"

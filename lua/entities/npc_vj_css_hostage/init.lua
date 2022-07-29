@@ -354,8 +354,10 @@ function ENT:CustomOnThink()
 				self:StopMoving()
 				self:VJ_TASK_FACE_X("TASK_FACE_TARGET", function(x)
 					x.RunCode_OnFinish = function()
-						local movet = ((self:GetPos():Distance(self.FollowingEntity:GetPos()) < 220) and "TASK_WALK_PATH") or "TASK_RUN_PATH"
-						self:VJ_TASK_GOTO_TARGET(movet, function(y) y.CanShootWhenMoving = true y.ConstantlyFaceEnemy = true end) 
+						if IsValid(self.FollowingEntity) then
+							local movet = ((self:GetPos():Distance(self.FollowingEntity:GetPos()) < 220) and "TASK_WALK_PATH") or "TASK_RUN_PATH"
+							self:VJ_TASK_GOTO_TARGET(movet, function(y) y.CanShootWhenMoving = true y.ConstantlyFaceEnemy = true end)
+						end
 					end
 				end)
 			end

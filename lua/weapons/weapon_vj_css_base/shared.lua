@@ -35,8 +35,11 @@ function SWEP:Zoom(lvl)
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function SWEP:PrimaryAttackEffects()
-	if self:CustomOnPrimaryAttackEffects() != true or self.IsMeleeWeapon == true then return end
 	local owner = self:GetOwner()
+	-- owner:RemoveAllGestures()
+	-- owner:VJ_AddLayeredAnimation(owner.AnimationParameters.Shoot,true,2)
+
+	if self:CustomOnPrimaryAttackEffects() != true or self.IsMeleeWeapon == true then return end
 
 	if self.PrimaryEffects_MuzzleFlash == true then
 		local muzzleattach = self.PrimaryEffects_MuzzleAttachment

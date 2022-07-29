@@ -8,7 +8,7 @@ SWEP.Purpose							= ""
 
 SWEP.ViewModel							= "models/weapons/cstrike/c_pist_elite.mdl"
 SWEP.WorldModel							= "models/weapons/w_pist_elite.mdl"
-SWEP.HoldType 							= "dual"
+SWEP.HoldType 							= "duel"
 SWEP.Spawnable							= false
 SWEP.AdminSpawnable						= false
 

@@ -331,6 +331,14 @@ if VJExists == true then
 	local ENT = FindMetaTable("Entity")
 	local NPC = FindMetaTable("NPC")
 	
+	function NPC:VJ_AddLayeredAnimation(seq,autokill,layer,speed)
+		local gesture = self:AddGestureSequence(self:LookupSequence(seq),autokill or true)
+		self:SetLayerPriority(gesture,layer or 1)
+		self:SetLayerPlaybackRate(gesture,(speed or 1) *0.5)
+
+		return gesture
+	end
+	
 	function ENT:VJ_IsDefaultWeaponSelected()
 		return GetConVarString("gmod_npcweapon") == ""
 	end
