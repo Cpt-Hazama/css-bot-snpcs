@@ -12,10 +12,10 @@ function ENT:Draw()
 end
 
 function ENT:Initialize()
-	local plyTeam = GetConVar("vj_css_team"):GetInt()
-	if plyTeam != 0 then
-		VJ_SetTeams()
-	end
+	-- local plyTeam = GetConVar("vj_css_team"):GetInt()
+	-- if plyTeam != 0 then
+	-- 	VJ_SetTeams()
+	-- end
 end
 
 function ENT:Think()

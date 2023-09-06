@@ -379,6 +379,10 @@ ENT.FootSteps = {
 local c = 0
 local debug = false
 ---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:CustomOnAlert()
+	self:RefreshAI(math.Rand(0.5,2))
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:GetSightDirection()
     local att = self:LookupAttachment("eyes") -- Not all models have it, must check for validity
     return att != 0 && self:GetAttachment(att).Ang:Forward() or self:GetForward()
@@ -454,17 +458,24 @@ function ENT:SwapWeapons()
 	local class = self:GetActiveWeapon():GetClass()
 	SafeRemoveEntity(self:GetActiveWeapon())
 	local wep = class == self.Secondary && self.Primary or self.Secondary
-	self:Give(wep)
+	self:DoChangeWeapon(wep, false)
 	self.NextSwitchT = CurTime() +math.Rand(2,5)
+	self.NextChaseTime = 0
+	self.NextIdleStandTime = 0
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:RefreshAI(t)
+	local time = (t && CurTime() +t) or 0
+	self.NextObjectiveT = time
+	self.NextSetMoveT = time
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:CustomOnInitialize()
-	self:CapabilitiesAdd(bit.bor(CAP_MOVE_JUMP))
-	self:CapabilitiesAdd(bit.bor(CAP_USE))
-	self:CapabilitiesAdd(bit.bor(CAP_OPEN_DOORS))
-	self:CapabilitiesAdd(bit.bor(CAP_ANIMATEDFACE))
+	self:CapabilitiesAdd(bit.bor(CAP_ANIMATEDFACE,CAP_MOVE_JUMP,CAP_OPEN_DOORS,CAP_USE))
 	self:DecideName()
 	PrintMessage(HUD_PRINTTALK,self:GetName() .. " has connected")
+
+	self:SetCollisionBounds(Vector(16,16,72),Vector(-16,-16,0))
 	
 	self.CurrentAnimationSet = nil
 	self.CurrentHoldType = "none"
@@ -479,6 +490,7 @@ function ENT:CustomOnInitialize()
 	self.NextSetMoveT = 0
 	self.NextRefreshAnimT = 0
 	self.Hostages = {}
+	self.Cur_IsCrouched = false
 
 	self.NextSwitchT = CurTime() +1
 	self.CanSwapWeapons = self:VJ_IsDefaultWeaponSelected()
@@ -491,9 +503,9 @@ function ENT:CustomOnInitialize()
 	self:SetGrenade(math.random(1,3))
 	
 	if self:VJ_CSS_ModeActive() or self:VJ_CSS_HostageActive() then
-		self.NextObjectiveT = CurTime() +1
 		self.Team = self.VJ_NPC_Class[1] == "CLASS_CSS_CT" && 1 or 2
 		self.GM = true
+		self:RefreshAI(math.Rand(0.5,2))
 	end
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
@@ -518,17 +530,17 @@ function ENT:CustomOnTakeDamage_BeforeDamage(dmginfo,hitgroup)
 			dmginfo:SetDamage(self:CalculateKevlar(dmginfo,hitgroup))
 			if (dmginfo:IsBulletDamage()) then
 				if self.HasSounds == true && self.HasImpactSounds == true then VJ_EmitSound(self,"vj_impact_metal/bullet_metal/metalsolid"..math.random(1,10)..".wav",70) end
-				self.DamageSpark1 = ents.Create("env_spark")
-				self.DamageSpark1:SetKeyValue("Magnitude","1")
-				self.DamageSpark1:SetKeyValue("Spark Trail Length","1")
-				self.DamageSpark1:SetPos(dmginfo:GetDamagePosition())
-				self.DamageSpark1:SetAngles(self:GetAngles())
-				self.DamageSpark1:SetParent(self)
-				self.DamageSpark1:Spawn()
-				self.DamageSpark1:Activate()
-				self.DamageSpark1:Fire("StartSpark","",0)
-				self.DamageSpark1:Fire("StopSpark","",0.001)
-				self:DeleteOnRemove(self.DamageSpark1)
+				local spark = ents.Create("env_spark")
+				spark:SetKeyValue("Magnitude","1")
+				spark:SetKeyValue("Spark Trail Length","1")
+				spark:SetPos(dmginfo:GetDamagePosition())
+				spark:SetAngles(self:GetAngles())
+				spark:SetParent(self)
+				spark:Spawn()
+				spark:Activate()
+				spark:Fire("StartSpark","",0)
+				spark:Fire("StopSpark","",0.001)
+				self:DeleteOnRemove(spark)
 			end
 		end
 	end
@@ -1192,21 +1204,54 @@ function ENT:GoToSpot(dist,argent,hide)
 	return foundPos
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:Crouch(crouch)
+	if crouch && self.Cur_IsCrouched != true then
+		self:SetIdleAnimation({ACT_COVER_LOW},true)
+		self.AnimTbl_WeaponAim = {ACT_COVER_LOW}
+		self.AnimTbl_WeaponAttack = {ACT_COVER_LOW}
+		self.AnimTbl_Walk = {ACT_WALK_CROUCH}
+		self.AnimTbl_Run = {ACT_RUN_CROUCH}
+		self.AnimTbl_ShootWhileMovingRun = {ACT_WALK_CROUCH_AIM}
+		self.AnimTbl_ShootWhileMovingWalk = {ACT_RUN_CROUCH_AIM}
+		self.NextChaseTime = 0
+		self.Cur_IsCrouched = true
+		self:SetCollisionBounds(Vector(16,16,36),Vector(-16,-16,0))
+	elseif !crouch && self.Cur_IsCrouched != false then
+		self:SetIdleAnimation({ACT_IDLE},true)
+		self.AnimTbl_WeaponAim = {ACT_IDLE_ANGRY}
+		self.AnimTbl_WeaponAttack = {ACT_IDLE}
+		self.AnimTbl_Walk = {ACT_WALK}
+		self.AnimTbl_Run = {ACT_RUN}
+		self.AnimTbl_ShootWhileMovingRun = {ACT_RUN_AIM}
+		self.AnimTbl_ShootWhileMovingWalk = {ACT_WALK_AIM}
+		self.NextChaseTime = 0
+		self.Cur_IsCrouched = false
+		self:SetCollisionBounds(Vector(16,16,72),Vector(-16,-16,0))
+	end
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
 local defOffset = Vector(0,0,10)
 function ENT:CustomOnThink()
 	self:SetArrivalSpeed(9999)
 	-- self:SetParameters() -- Layers won't loop for some reason despite being set to and other alternatives...
 	
-	debug = tobool(GetConVarNumber("vj_css_bot_debug"))
+	debug = tobool(GetConVar("vj_css_bot_debug"):GetInt())
 	local controller = self.VJ_TheController
 	if self.HasTheBomb && !self.RanBombInit then
 		self:BombInit()
 		self.RanBombInit = true
 	end
+
 	self.DisableFootStepSoundTimer = !(self:GetActivity() == ACT_RUN)
 	self.HasGrenadeAttack = self.GrenadeCount > 0
-	if IsValid(self:GetEnemy()) then
-		if math.random(1,100) <= 3 && !IsValid(controller) && self:Visible(self:GetEnemy()) && self.DoingWeaponAttack then
+
+	if !IsValid(controller) then
+		self:Crouch(VJ_ShouldDuck(self) or VJ_ShouldDuck(self:GetCurWaypointPos()))
+	end
+
+	local enemyEnt = self:GetEnemy()
+	if IsValid(enemyEnt) then
+		if math.random(1,100) <= 3 && !IsValid(controller) && self:Visible(enemyEnt) && self.DoingWeaponAttack then
 			self:AvoidThreat()
 		end
 		if IsValid(controller) then
@@ -1214,20 +1259,10 @@ function ENT:CustomOnThink()
 				self:SwapWeapons()
 				self.NextSwitchT = CurTime() +1
 			end
-			if controller:KeyDown(IN_DUCK) then
-				self.AnimTbl_IdleStand = {ACT_COVER_LOW}
-				self.AnimTbl_WeaponAttack = {ACT_COVER_LOW}
-				self.AnimTbl_Walk = {ACT_WALK_CROUCH}
-				self.AnimTbl_Run = {ACT_RUN_CROUCH}
-			else
-				self.AnimTbl_IdleStand = {ACT_IDLE}
-				self.AnimTbl_WeaponAttack = {ACT_IDLE}
-				self.AnimTbl_Walk = {ACT_WALK}
-				self.AnimTbl_Run = {ACT_RUN}
-			end
+			self:Crouch(controller:KeyDown(IN_DUCK))
 		else
-			if self.CanSwapWeapons && self:Visible(self:GetEnemy()) then
-				local dist = self:GetEnemy():GetPos():Distance(self:GetPos())
+			if self.CanSwapWeapons && self:Visible(enemyEnt) then
+				local dist = enemyEnt:GetPos():Distance(self:GetPos())
 				local class = self:GetActiveWeapon():GetClass()
 				if class == self.Primary && dist <= 350 && math.random(1,70) == 1 && CurTime() > self.NextSwitchT then
 					self:SwapWeapons()
@@ -1248,9 +1283,8 @@ function ENT:CustomOnThink()
 	if debug then
 		if CurTime() > c && self:GetCurWaypointPos() then
 			local vec = self:GetCurWaypointPos()
-			local moveData = self.LastMoveData
-			local targX = self:GetPos() +self:GetForward() *(75 *moveData.x)
-			local targY = self:GetPos() +self:GetRight() *(75 *moveData.y)
+			local targX = self:GetPos() +self:GetForward() *(75 *self:GetPoseParameter("move_x"))
+			local targY = self:GetPos() +self:GetRight() *(75 *self:GetPoseParameter("move_y"))
 			targX.z = vec.z
 			targY.z = vec.z
 			VJ_CreateTestObject(vec +defOffset,Angle(0,0,0),Color(0,100,255))
@@ -1272,7 +1306,7 @@ function ENT:CustomOnThink()
 			local hostages = self:VJ_CSS_FindHostages()
 			local waitingHostages = {}
 			if team == 1 then // CT
-				if !IsValid(self:GetEnemy()) then
+				if !IsValid(enemyEnt) then
 					if CurTime() > self.NextObjectiveT then
 						for _,v in pairs(hostages) do
 							if !IsValid(v.FollowingEntity) then
@@ -1296,19 +1330,18 @@ function ENT:CustomOnThink()
 					if CurTime() > self.NextSetMoveT && self.TargetPosition then
 						self:SetLastPosition(self.TargetPosition)
 						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
-						self.NextSetMoveT = CurTime() +math.Rand(6,12)
+						self:RefreshAI(math.Rand(6,12))
 					end
 					if IsValid(self.Objective) && self.Objective:IsNPC() && self:GetPos():Distance(self.Objective:GetPos()) <= 80 then
 						if !IsValid(self.Objective.FollowingEntity) then
 							-- self.Objective.FollowingEntity = self
 							self.Objective:SetFollowEntity(self)
-							self.NextObjectiveT = CurTime()
-							self.NextSetMoveT = CurTime()
+							self:RefreshAI()
 						end
 					end
 				end
 			elseif team == 2 then // T
-				if !IsValid(self:GetEnemy()) then
+				if !IsValid(enemyEnt) then
 					if CurTime() > self.NextObjectiveT then
 						if math.random(1,8) == 1 then
 							self.Objective = VJ_PICK(zones)
@@ -1335,7 +1368,7 @@ function ENT:CustomOnThink()
 					if CurTime() > self.NextSetMoveT && self.TargetPosition then
 						self:SetLastPosition(self.TargetPosition)
 						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
-						self.NextSetMoveT = CurTime() +math.Rand(6,12)
+						self:RefreshAI(math.Rand(6,12))
 					end
 				end
 			end
@@ -1350,19 +1383,19 @@ function ENT:CustomOnThink()
 					self.TargetPosition = sites[self.Objective] +Vector(math.Rand(-500,500),math.Rand(-500,500),math.Rand(0,200))
 					self.NextObjectiveT = CurTime() +math.Rand(20,30)
 				end
-				if self.Objective && !IsValid(self:GetEnemy()) then
+				if self.Objective && !IsValid(enemyEnt) then
 					if CurTime() > self.NextSetMoveT then
 						self:SetLastPosition(self.TargetPosition)
 						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
-						self.NextSetMoveT = CurTime() +math.Rand(6,12)
+						self:RefreshAI(math.Rand(6,12))
 					end
 				end
 			else
-				if !IsValid(self:GetEnemy()) or IsValid(self:GetEnemy()) && self:GetEnemy():GetPos():Distance(self:GetPos()) > 1000 then
+				if !IsValid(enemyEnt) or IsValid(enemyEnt) && enemyEnt:GetPos():Distance(self:GetPos()) > 1000 then
 					if CurTime() > self.NextSetMoveT then
 						self:SetLastPosition(!IsValid(theBomb.Diffuser) && theBomb:GetPos() or theBomb:GetPos() +Vector(math.Rand(-500,500),math.Rand(-500,500),math.Rand(0,200)))
 						self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH")
-						self.NextSetMoveT = CurTime() +math.Rand(6,12)
+						self:RefreshAI(math.Rand(6,12))
 					end
 					if self:GetPos():Distance(theBomb:GetPos()) <= 110 && !IsValid(theBomb.Diffuser) then
 						theBomb.Diffuser = self
@@ -1387,8 +1420,8 @@ function ENT:CustomOnThink()
 					end
 				end
 				if self.Objective then
-					if !self.HasTheBomb && IsValid(self:GetEnemy()) then return end
-					if self.HasTheBomb && IsValid(self:GetEnemy()) then
+					if !self.HasTheBomb && IsValid(enemyEnt) then return end
+					if self.HasTheBomb && IsValid(enemyEnt) then
 						if self:GetPos():Distance(self.TargetPosition) > 200 then
 							return
 						end
@@ -1397,7 +1430,7 @@ function ENT:CustomOnThink()
 						if CurTime() > self.NextSetMoveT then
 							self:SetLastPosition(self.GrabBomb:GetPos())
 							self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH")
-							self.NextSetMoveT = CurTime() +math.Rand(6,12)
+							self:RefreshAI(math.Rand(6,12))
 						end
 						if self:GetPos():Distance(self.GrabBomb:GetPos()) < 150 then
 							SafeRemoveEntity(self.GrabBomb)
@@ -1410,7 +1443,7 @@ function ENT:CustomOnThink()
 					if CurTime() > self.NextSetMoveT then
 						self:SetLastPosition(self.TargetPosition)
 						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
-						self.NextSetMoveT = CurTime() +math.Rand(6,12)
+						self:RefreshAI(math.Rand(6,12))
 					end
 					if self.HasTheBomb then
 						if self:GetPos():Distance(self.TargetPosition) <= 120 then
@@ -1422,7 +1455,7 @@ function ENT:CustomOnThink()
 					end
 				end
 			else
-				if !IsValid(self:GetEnemy()) then
+				if !IsValid(enemyEnt) then
 					if self:GetPos():Distance(theBomb:GetPos()) > 1000 then
 						if CurTime() > self.NextSetMoveT then
 							local b = self:GoToSpot(800,theBomb)
@@ -1430,7 +1463,7 @@ function ENT:CustomOnThink()
 								self:SetLastPosition(theBomb:GetPos() +Vector(math.Rand(-700,700),math.Rand(-700,700),math.Rand(0,200)))
 								self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH")
 							end
-							self.NextSetMoveT = CurTime() +math.Rand(6,12)
+							self:RefreshAI(math.Rand(6,12))
 						end
 					end
 				end
@@ -1467,11 +1500,11 @@ function ENT:FootStepSoundCode(CustomTbl)
 			self:CustomOnFootStepSound()
 			local CurSched = self.CurrentSchedule
 			if self.DisableFootStepOnRun == false && ((VJ_HasValue(self.AnimTbl_Run,self:GetMovementActivity())) or (CurSched != nil  && CurSched.IsMovingTask_Run == true)) /*(VJ_HasValue(VJ_RunActivites,self:GetMovementActivity()) or VJ_HasValue(self.CustomRunActivites,self:GetMovementActivity()))*/ then
-				self:CustomOnFootStepSound_Run()
+				-- self:CustomOnFootStepSound_Run()
 				self.FootStepT = CurTime() + self.FootStepTimeRun
 				return
 			elseif self.DisableFootStepOnWalk == false && (VJ_HasValue(self.AnimTbl_Walk,self:GetMovementActivity()) or (CurSched != nil  && CurSched.IsMovingTask_Walk == true)) /*(VJ_HasValue(VJ_WalkActivites,self:GetMovementActivity()) or VJ_HasValue(self.CustomWalkActivites,self:GetMovementActivity()))*/ then
-				self:CustomOnFootStepSound_Walk()
+				-- self:CustomOnFootStepSound_Walk()
 				self.FootStepT = CurTime() + self.FootStepTimeWalk
 				return
 			end

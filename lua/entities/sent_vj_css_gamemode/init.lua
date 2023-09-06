@@ -19,8 +19,10 @@ function ENT:Initialize()
 	for _,v in pairs(ents.FindByClass(self:GetClass())) do
 		if IsValid(v) && v != self then
 			self:Remove()
+			return
 		end
 	end
+	self.DidInitialize = false
 	self.SpawnPositions = {[1]={},[2]={}}
 	self.BombSites = {}
 	for _,v in pairs(ents.FindByClass("sent_vj_css_spawn_ct")) do
@@ -77,6 +79,8 @@ function ENT:SuccessfulInit()
 			SafeRemoveEntity(pos)
 		end
 	end
+
+	self.DidInitialize = true
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:PlayerNWSound(ply,snd)
@@ -100,7 +104,14 @@ function ENT:Winner(team)
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:Think()
-
+	if !self.DidInitialize then return end
+	local CT = ents.FindByClass("npc_vj_css_ct*")
+	local T = ents.FindByClass("npc_vj_css_t*")
+	if #CT <= 0 then
+		self:Winner(2)
+	elseif #T <= 0 then
+		self:Winner(1)
+	end
 	self:NextThink(CurTime())
 	return true
 end

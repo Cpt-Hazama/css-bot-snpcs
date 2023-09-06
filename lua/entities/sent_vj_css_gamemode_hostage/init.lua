@@ -17,8 +17,11 @@ function ENT:Initialize()
 	for _,v in pairs(ents.FindByClass(self:GetClass())) do
 		if IsValid(v) && v != self then
 			self:Remove()
+			print("Only one CSS Gamemode can be active at a time! Removing duplicate...")
+			return
 		end
 	end
+	self.DidInitialize = false
 	self.SpawnPositions = {[1]={},[2]={},[3]={}}
 	self.RescueZones = {}
 	for _,v in pairs(ents.FindByClass("sent_vj_css_spawn_ct")) do
@@ -46,6 +49,12 @@ function ENT:Initialize()
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:SuccessfulInit()
+	if !VJ_CVAR_IGNOREPLAYERS then
+		for _,v in pairs(player.GetAll()) do
+			VJ_CSS_ApplyTeamSettings(v)
+		end
+	end
+
 	for i = 1,#self.SpawnPositions[1] do
 		local pos = self.SpawnPositions[1][i]
 		if pos then
@@ -84,6 +93,8 @@ function ENT:SuccessfulInit()
 			SafeRemoveEntity(pos)
 		end
 	end
+
+	self.DidInitialize = true
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:PlayerNWSound(ply,snd)
@@ -125,6 +136,23 @@ function ENT:CheckHostages(madeIt)
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:Think()
+	if !self.DidInitialize then return end
+	local CT = ents.FindByClass("npc_vj_css_ct*")
+	local T = ents.FindByClass("npc_vj_css_t*")
+	if !VJ_CVAR_IGNOREPLAYERS then
+		for _,v in pairs(player.GetAll()) do
+			if v:Alive() && VJ_HasValue(v.VJ_NPC_Class,"CLASS_CSS_CT") then
+				table.insert(CT,v)
+			elseif v:Alive() && VJ_HasValue(v.VJ_NPC_Class,"CLASS_CSS_T") then
+				table.insert(T,v)
+			end
+		end
+	end
+	if #CT <= 0 then
+		self:Winner(2)
+	elseif #T <= 0 then
+		self:Winner(1)
+	end
 	self:NextThink(CurTime())
 	return true
 end

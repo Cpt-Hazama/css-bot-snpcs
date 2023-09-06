@@ -18,14 +18,15 @@ ENT.HasMeleeAttack = false
 ENT.PoseParameterLooking_Names = {pitch={"aim_pitch"},yaw={"aim_yaw"},roll={}}
 ENT.FootStepTimeRun = 0.3
 ENT.FootStepTimeWalk = 0.5
+ENT.UsePlayerModelMovement = true
 
 ENT.Behavior = VJ_BEHAVIOR_PASSIVE
 ENT.Weapon_NoSpawnMenu = true 
 ENT.HasGrenadeAttack = false
 
 ENT.HasCallForHelpAnimation = false
-ENT.AnimTbl_CallForHelp = {0}
-ENT.CallForBackUpOnDamageAnimation = {0}
+ENT.AnimTbl_CallForHelp = nil
+ENT.CallForBackUpOnDamageAnimation = nil
 
 ENT.SoundTbl_FollowPlayer = {
 	"hostage/huse/getouttahere.wav",
@@ -68,6 +69,7 @@ ENT.GeneralSoundPitch1 = 100
 ENT.GeneralSoundPitch2 = 100
 
 ENT.AnimTbl_IdleStand = {ACT_HL2MP_IDLE}
+ENT.AnimTbl_WeaponAim = {ACT_HL2MP_IDLE}
 ENT.AnimTbl_Walk = {ACT_HL2MP_WALK}
 ENT.AnimTbl_Run = {ACT_HL2MP_RUN}
 ENT.AnimTbl_ScaredBehaviorStand = {ACT_HL2MP_IDLE_CROUCH}	
@@ -283,55 +285,10 @@ function ENT:OnFireBullet(ent,data)
 	end
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
-function ENT:Between(a,b)
-	local waypoint = self:GetCurWaypointPos()
-	local ang = (waypoint -self:GetPos()):Angle()
-	local dif = math.AngleDifference(self:GetAngles().y,ang.y)
-	return dif < a && dif > b
-end
----------------------------------------------------------------------------------------------------------------------------------------------
-function ENT:DecideXY()
-	local x = 0
-	local y = 0
-	if self:Between(30,-30) then
-		x = 1
-		y = 0
-	elseif self:Between(70,30) then
-		x = 1
-		y = 1
-	elseif self:Between(120,70) then
-		x = 0
-		y = 1
-	elseif self:Between(150,120) then
-		x = -1
-		y = 1
-	elseif !self:Between(150,-150) then
-		x = -1
-		y = 0
-	elseif self:Between(-110,-150) then
-		x = -1
-		y = -1
-	elseif self:Between(-70,-110) then
-		x = 0
-		y = -1
-	elseif self:Between(-30,-70) then
-		x = 1
-		y = -1
-	end
-	
-	self:SetPoseParameter("move_x",x)
-	self:SetPoseParameter("move_y",y)
-end
----------------------------------------------------------------------------------------------------------------------------------------------
 local c = 0
 local debug = false
 function ENT:CustomOnThink()
-	self:DecideXY()
-	if self:IsMoving() then
-		if !self.DoingWeaponAttack && self:GetPos():Distance(self:GetCurWaypointPos()) > 75 then
-			self:FaceCertainPosition(self:GetCurWaypointPos())
-		end
-	end
+	self:SetArrivalActivity(ACT_HL2MP_IDLE)
 	if IsValid(self.FollowPlayer_Entity) && !IsValid(self.FollowingEntity) then
 		self.FollowingEntity = self.FollowPlayer_Entity
 	end

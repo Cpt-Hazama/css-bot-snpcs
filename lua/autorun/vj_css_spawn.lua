@@ -88,16 +88,13 @@ if VJExists == true then
 			"weapon_vj_css_glock",
 		}
 
-		net.Receive("vj_css_teams",function(len,ply)
-			local team = net.ReadInt(8)
-			local ply = net.ReadEntity()
-
+		function VJ_CSS_ApplyTeamSettings(ply,plyTeam)
+			local team = plyTeam or ply:GetInfoNum("vj_css_team",0)
 			ply:SetHealth(100)
 			ply:SetArmor(100)
 
 			local function GiveWep(wep,draw)
-				ply.VJ_CanBePickedUpWithOutUse = true
-				ply.VJ_CanBePickedUpWithOutUse_Class = wep
+				ply.VJ_CurPickupWithoutUse = wep
 				ply:Give(wep)
 				if draw then
 					ply:SelectWeapon(wep)
@@ -109,27 +106,45 @@ if VJExists == true then
 			GiveWep(VJ_PICK(team == 1 && CT_SEC or team == 2 && T_SEC))
 			GiveWep("weapon_vj_css_knife")
 
-			local tblCT = {
-				"models/player/gasmask.mdl",
-				"models/player/riot.mdl",
-				"models/player/urban.mdl",
-				"models/player/swat.mdl"
-			}
-			local tblT = {
-				"models/player/arctic.mdl",
-				"models/player/guerilla.mdl",
-				"models/player/leet.mdl",
-				"models/player/phoenix.mdl"
-			}
-			ply:SetModel(VJ_PICK(team == 1 && tblCT or team == 2 && tblT))
-			ply:SetupHands(ply)
-			local data = player_manager.TranslatePlayerHands(ply:GetModel())
-			local hands = ply:GetHands()
-			hands:SetModel(data.model)
-			hands:SetSkin(data.skin)
-			hands:SetBodyGroups(data.body)
+			-- local tblCT = {
+			-- 	"models/player/gasmask.mdl",
+			-- 	"models/player/riot.mdl",
+			-- 	"models/player/urban.mdl",
+			-- 	"models/player/swat.mdl"
+			-- }
+			-- local tblT = {
+			-- 	"models/player/arctic.mdl",
+			-- 	"models/player/guerilla.mdl",
+			-- 	"models/player/leet.mdl",
+			-- 	"models/player/phoenix.mdl"
+			-- }
+			-- ply:SetModel(VJ_PICK(team == 1 && tblCT or team == 2 && tblT))
+			-- ply:SetupHands(ply)
+			-- local data = player_manager.TranslatePlayerHands(ply:GetModel())
+			-- local hands = ply:GetHands()
+			-- hands:SetModel(data.model)
+			-- hands:SetSkin(data.skin)
+			-- hands:SetBodyGroups(data.body)
 
 			ply.VJ_NPC_Class = {team == 1 && "CLASS_CSS_CT" or team == 2 && "CLASS_CSS_T"}
+
+			local gamemodeEnt = VJ_CSS_HostageModeEntity() or VJ_CSS_ModeEntity()
+			if IsValid(gamemodeEnt) then
+				local spawns = gamemodeEnt.SpawnPositions[team]
+				if spawns then
+					local spawn = VJ_PICK(spawns)
+					ply:SetPos(spawn:GetPos() +Vector(0,0,4))
+					table.remove(spawns,table.KeyFromValue(spawns,spawn))
+					spawn:Remove()
+				end
+			end
+		end
+
+		net.Receive("vj_css_teams",function(len,ply)
+			local team = net.ReadInt(8)
+			local ply = net.ReadEntity()
+
+			VJ_CSS_ApplyTeamSettings(ply,team)
 		end)
 	end
 
@@ -270,6 +285,23 @@ if VJExists == true then
 	
 	local NPC = FindMetaTable("NPC")
 	
+	function VJ_GetCurNavArea(ent, range)
+		if navmesh == nil then return false end
+		return navmesh.GetNavArea(isvector(ent) && ent or ent:GetPos(), range or 100)
+	end
+	
+	function VJ_ShouldDuck(ent)
+		local curNav = VJ_GetCurNavArea(ent)
+		if curNav then
+			local attributes = curNav:GetAttributes()
+			if attributes and attributes != 0 then
+				if bit.band(attributes, NAV_MESH_CROUCH) == NAV_MESH_CROUCH then
+					return true
+				end
+			end
+		end
+	end
+	
 	function VJ_GetNavAreas(dist,argent)
 		if dist && IsValid(argent) then
 			local tbl = {}
@@ -341,6 +373,28 @@ if VJExists == true then
 	
 	function ENT:VJ_IsDefaultWeaponSelected()
 		return GetConVarString("gmod_npcweapon") == ""
+	end
+	
+	function VJ_CSS_ModeEntity()
+		local e = NULL
+		for _,v in pairs(ents.GetAll()) do
+			if v:GetClass() == "sent_vj_css_gamemode" then
+				e = v
+				break
+			end
+		end
+		return e
+	end
+	
+	function VJ_CSS_HostageModeEntity()
+		local e = NULL
+		for _,v in pairs(ents.GetAll()) do
+			if v:GetClass() == "sent_vj_css_gamemode_hostage" then
+				e = v
+				break
+			end
+		end
+		return e
 	end
 	
 	function ENT:VJ_CSS_ModeEntity()
