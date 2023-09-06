@@ -17,6 +17,7 @@ end
 SWEP.Reload_TimeUntilFinished 			= false
 
 SWEP.Primary.Ammo						= "SMG1"
+SWEP.Primary.PlayerDamage = "Double"
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function SWEP:CustomOnFireAnimationEvent(pos,ang,event,options)
 	if event == 5001 then return true end

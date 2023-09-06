@@ -20,6 +20,7 @@ if VJExists == true then
 	VJ.AddCategoryInfo(vCatTools,{Icon = "vj_icons/css.png"})
 	
 	VJ.AddConVar("vj_css_bot_debug",0)
+	VJ.AddConVar("vj_css_botcount",6)
 	VJ.AddClientConVar("vj_css_team","0","Automatically set player team since people are too stupid to press 2 buttons... [0 = Disabled, 1 = CT, 2 = T]")
 
 	if CLIENT then
@@ -28,19 +29,66 @@ if VJExists == true then
 				if !game.SinglePlayer() && !LocalPlayer():IsAdmin() then
 					Panel:AddControl("Label", {Text = "#vjbase.menu.general.admin.not"})
 					Panel:AddControl( "Label", {Text = "#vjbase.menu.general.admin.only"})
+					Panel:AddControl("Slider", {Label = "Choose Your Team", Command = "vj_css_team", Type = "Integer", Min = "0", Max = "2"})
+					Panel:AddControl("Label",{Text = "0 = No Team, 1 = Counter-Terrorists, 2 = Terrorists"})
 					return
 				end
 				Panel:AddControl("Label",{Text = "#vjbase.menu.general.admin.only"})
 				Panel:AddControl("Checkbox", {Label = "[Developers] Enable Bot Debugging", Command = "vj_css_bot_debug"})
+				Panel:AddControl("Slider", {Label = "Max Bots", Command = "vj_css_botcount", Type = "Integer", Min = "0", Max = "16"})
 				Panel:AddControl("Slider", {Label = "Choose Your Team", Command = "vj_css_team", Type = "Integer", Min = "0", Max = "2"})
 				Panel:AddControl("Label",{Text = "0 = No Team, 1 = Counter-Terrorists, 2 = Terrorists"})
-				Panel:AddControl("Label",{Text = "Note that if your Team isn't 0, many of your Player values/settings will change!"})
 			end)
 		end)
 	end
 
 	if SERVER then
 		util.AddNetworkString("vj_css_teams")
+
+		VJ_CSS_MAX_BOT = 6 -- Default max amount if you use the map spawn points
+
+		function VJ_CSS_GetDefaultPoints()
+			local tbl = {CT={},T={},H={},Bomb={},Rescue={}}
+			for _,v in pairs(ents.GetAll()) do
+				if v:GetClass() == "info_player_counterterrorist" then
+					table.insert(tbl.CT,v)
+				elseif v:GetClass() == "info_player_terrorist" then
+					table.insert(tbl.T,v)
+				elseif v:GetClass() == "hostage_entity" or v:GetClass() == "info_hostage_spawn" then
+					table.insert(tbl.H,v)
+				elseif v:GetClass() == "func_bomb_target" then
+					table.insert(tbl.Bomb,v)
+				elseif v:GetClass() == "func_hostage_rescue" then
+					table.insert(tbl.Rescue,v)
+				end
+			end
+			return tbl
+		end
+
+		VJ_CSS_MapSpawns = VJ_CSS_MapSpawns or {CT={},T={},H={},Bomb={},Rescue={}}
+		hook.Add("OnEntityCreated","VJ_CSS_CheckForSpawns",function(v)
+			local tbl = VJ_CSS_MapSpawns
+			if v:GetClass() == "info_player_counterterrorist" then
+				table.insert(tbl.CT,v)
+				print("Registered ",v)
+			elseif v:GetClass() == "info_player_terrorist" then
+				table.insert(tbl.T,v)
+				print("Registered ",v)
+			elseif v:GetClass() == "hostage_entity" or v:GetClass() == "info_hostage_spawn" then
+				table.insert(tbl.H,v)
+				print("Registered ",v)
+			elseif v:GetClass() == "func_bomb_target" then
+				table.insert(tbl.Bomb,v:GetPos())
+				print("Registered ",v,v:GetPos())
+			elseif v:GetClass() == "func_hostage_rescue" then
+				table.insert(tbl.Rescue,v:GetPos())
+				print("Registered ",v,v:GetPos())
+			end
+		end)
+
+		hook.Add("PreCleanupMap","VJ_CSS",function()
+			VJ_CSS_MapSpawns = {CT={},T={},H={},Bomb={},Rescue={}}
+		end)
 	
 		local CT_PRI = {
 			"weapon_vj_css_m16",
@@ -128,7 +176,14 @@ if VJExists == true then
 
 			ply.VJ_NPC_Class = {team == 1 && "CLASS_CSS_CT" or team == 2 && "CLASS_CSS_T"}
 
-			local gamemodeEnt = VJ_CSS_HostageModeEntity() or VJ_CSS_ModeEntity()
+
+			local gamemodeEnt
+			for _,x in pairs(ents.GetAll()) do
+				if x:GetClass() == "sent_vj_css_gamemode" or x:GetClass() == "sent_vj_css_gamemode_hostage" then
+					gamemodeEnt = x
+					break
+				end
+			end
 			if IsValid(gamemodeEnt) then
 				local spawns = gamemodeEnt.SpawnPositions[team]
 				if spawns then
@@ -466,6 +521,20 @@ if VJExists == true then
 		end
 		return sites
 	end
+
+	cvars.AddChangeCallback("vj_css_botcount", function(convar_name, oldValue, newValue)
+		local CT = #VJ_CSS_MapSpawns.CT
+		local T = #VJ_CSS_MapSpawns.T
+		for _,v in pairs(ents.FindByClass("sent_vj_css_spawn_ct")) do
+			CT = CT +1
+		end
+		for _,v in pairs(ents.FindByClass("sent_vj_css_spawn_t")) do
+			T = T +1
+		end
+
+		local lowest = math.min(CT,T)
+		VJ_CSS_MAX_BOT = math.Clamp(tonumber(newValue),0,lowest)
+	end)
 
 -- !!!!!! DON'T TOUCH ANYTHING BELOW THIS !!!!!! -------------------------------------------------------------------------------------------------------------------------
 	AddCSLuaFile(AutorunFile)

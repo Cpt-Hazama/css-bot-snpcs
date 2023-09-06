@@ -11,6 +11,7 @@ ENT.Model = {
 	"models/player/hostage/hostage_03.mdl",
 	"models/player/hostage/hostage_04.mdl"
 }
+ENT.VJ_NPC_Class = {"CLASS_CSS_CT"}
 ENT.StartHealth = 100
 ENT.HullType = HULL_HUMAN
 ENT.BloodColor = "Red"
@@ -230,12 +231,15 @@ function ENT:CustomOnInitialize()
 	self.CurrentFireType = 1
 	
 	self.FollowingEntity = NULL
+	self.Cur_IsCrouched = false
 	
 	if self:VJ_CSS_HostageActive() then
 		self.NextObjectiveT = CurTime() +1
 		self.GM = true
 		self.Behavior = VJ_BEHAVIOR_PASSIVE_NATURE
 	end
+
+	self:SetSurroundingBoundsType(0)
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:SetFollowEntity(ent)
@@ -285,10 +289,43 @@ function ENT:OnFireBullet(ent,data)
 	end
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:Crouch(crouch)
+	if crouch && self.Cur_IsCrouched != true then
+		self:SetIdleAnimation({ACT_HL2MP_IDLE_CROUCH},true)
+		self.AnimTbl_IdleStand = {ACT_HL2MP_IDLE_CROUCH}
+		self.AnimTbl_WeaponAim = {ACT_HL2MP_IDLE_CROUCH}
+		self.AnimTbl_Walk = {ACT_HL2MP_WALK_CROUCH}
+		self.AnimTbl_Run = {ACT_HL2MP_WALK_CROUCH}
+		self.AnimTbl_ScaredBehaviorStand = {ACT_HL2MP_IDLE_CROUCH}	
+		self.AnimTbl_TakingCover = {ACT_HL2MP_IDLE_CROUCH}
+		self.AnimTbl_MoveToCover = {ACT_HL2MP_WALK_CROUCH}
+		self.NextChaseTime = 0
+		self.Cur_IsCrouched = true
+		self:SetCollisionBounds(Vector(16,16,36),Vector(-16,-16,0))
+	elseif !crouch && self.Cur_IsCrouched != false then
+		self:SetIdleAnimation({ACT_HL2MP_IDLE},true)
+		self.AnimTbl_IdleStand = {ACT_HL2MP_IDLE}
+		self.AnimTbl_WeaponAim = {ACT_HL2MP_IDLE}
+		self.AnimTbl_Walk = {ACT_HL2MP_WALK}
+		self.AnimTbl_Run = {ACT_HL2MP_RUN}
+		self.AnimTbl_ScaredBehaviorStand = {ACT_HL2MP_IDLE_CROUCH}	
+		self.AnimTbl_TakingCover = {ACT_HL2MP_IDLE_CROUCH}
+		self.AnimTbl_MoveToCover = {ACT_HL2MP_WALK_CROUCH}
+		self.NextChaseTime = 0
+		self.Cur_IsCrouched = false
+		self:SetCollisionBounds(Vector(16,16,72),Vector(-16,-16,0))
+	end
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
 local c = 0
 local debug = false
 function ENT:CustomOnThink()
 	self:SetArrivalActivity(ACT_HL2MP_IDLE)
+
+	if !IsValid(self.VJ_TheController) then
+		self:Crouch(VJ_ShouldDuck(self) or VJ_ShouldDuck(self:GetCurWaypointPos()))
+	end
+
 	if IsValid(self.FollowPlayer_Entity) && !IsValid(self.FollowingEntity) then
 		self.FollowingEntity = self.FollowPlayer_Entity
 	end
@@ -360,11 +397,11 @@ function ENT:FootStepSoundCode(CustomTbl)
 			self:CustomOnFootStepSound()
 			local CurSched = self.CurrentSchedule
 			if self.DisableFootStepOnRun == false && ((VJ_HasValue(self.AnimTbl_Run,self:GetMovementActivity())) or (CurSched != nil  && CurSched.IsMovingTask_Run == true)) /*(VJ_HasValue(VJ_RunActivites,self:GetMovementActivity()) or VJ_HasValue(self.CustomRunActivites,self:GetMovementActivity()))*/ then
-				self:CustomOnFootStepSound_Run()
+				-- self:CustomOnFootStepSound_Run()
 				self.FootStepT = CurTime() + self.FootStepTimeRun
 				return
 			elseif self.DisableFootStepOnWalk == false && (VJ_HasValue(self.AnimTbl_Walk,self:GetMovementActivity()) or (CurSched != nil  && CurSched.IsMovingTask_Walk == true)) /*(VJ_HasValue(VJ_WalkActivites,self:GetMovementActivity()) or VJ_HasValue(self.CustomWalkActivites,self:GetMovementActivity()))*/ then
-				self:CustomOnFootStepSound_Walk()
+				-- self:CustomOnFootStepSound_Walk()
 				self.FootStepT = CurTime() + self.FootStepTimeWalk
 				return
 			end

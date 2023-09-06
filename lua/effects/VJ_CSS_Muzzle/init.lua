@@ -6,6 +6,7 @@ if (!file.Exists("autorun/vj_base_autorun.lua","LUA")) then return end
 --------------------------------------------------*/
 function EFFECT:Init(data)
 	if !IsValid(data:GetEntity()) then return end
+	if !IsValid(data:GetEntity():GetOwner()) then return end
 	self.Pos = self:GetTracerShootPos(data:GetOrigin(),data:GetEntity(),data:GetAttachment())
 	local Emitter = ParticleEmitter(self.Pos)
 	if Emitter == nil then return end

@@ -492,6 +492,9 @@ function ENT:CustomOnInitialize()
 	self.Hostages = {}
 	self.Cur_IsCrouched = false
 
+	self.GM_Entity = nil
+	self.GM_EntityHostage = nil
+
 	self.NextSwitchT = CurTime() +1
 	self.CanSwapWeapons = self:VJ_IsDefaultWeaponSelected()
 	timer.Simple(0,function()
@@ -507,6 +510,8 @@ function ENT:CustomOnInitialize()
 		self.GM = true
 		self:RefreshAI(math.Rand(0.5,2))
 	end
+
+	self:SetSurroundingBoundsType(0)
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:CalculateKevlar(dmginfo,hitgroup)
@@ -1174,11 +1179,31 @@ function ENT:AvoidThreat()
 	local maxDepth = 20
 	local targetPos = self:GetPos() +Vector(math.Rand(-maxDist,maxDist),math.Rand(-maxDist,maxDist),maxDepth)
 
-	if self:GetVelocity():Length() <= 0 && self:GetActivity() != self.WeaponAnimTranslations[ACT_JUMP] then
-		self:VJ_ACT_PLAYACTIVITY(self.WeaponAnimTranslations[ACT_JUMP],false,false,false)
-		self:SetGroundEntity(NULL)
-		self:SetVelocity((targetPos -self:GetPos()) +self:GetUp() *self.JumpHeight)
+	if self:GetNavType() != NAV_JUMP && (IsValid(wep) && wep:Clip1() > 0 or !IsValid(wep)) then
+		self:Jump(targetPos)
 	end
+
+	-- if self:GetVelocity():Length() <= 0 && self:GetActivity() != self.WeaponAnimTranslations[ACT_JUMP] then
+	-- 	self:VJ_ACT_PLAYACTIVITY(self.WeaponAnimTranslations[ACT_JUMP],false,false,false)
+	-- 	self:SetGroundEntity(NULL)
+	-- 	self:SetVelocity((targetPos -self:GetPos()) +self:GetUp() *self.JumpHeight)
+	-- end
+end
+---------------------------------------------------------------------------------------------------------------------------------------------
+function ENT:Jump(pos)
+	self:StopMoving()
+	self:ResetMoveCalc()
+	self:SetNavType(NAV_GROUND)
+	self:SetMoveType(MOVETYPE_STEP)
+	if self.CurrentSchedule then
+		self.CurrentSchedule = nil
+		self.CurrentTask = nil
+		self.CurrentTaskID = nil
+	end
+	self.NextIdleStandTime = CurTime()
+	self.NextIdleTime = CurTime()
+	self.NextChaseTime = CurTime()
+	self:ForceMoveJump(self:CalculateProjectile("Curve", self:GetPos(), self:GetPos() +((((pos or self:GetPos() +self:GetUp() *100) -self:GetPos()):GetNormalized() *50) +(self:GetUp() *25)), 250))
 end
 ---------------------------------------------------------------------------------------------------------------------------------------------
 function ENT:GoToSpot(dist,argent,hide)
@@ -1187,7 +1212,7 @@ function ENT:GoToSpot(dist,argent,hide)
 	if spots && #spots > 0 then
 		local nav = VJ_PICK(spots)
 		self:SetLastPosition(nav)
-		self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(nav) > 600 && "TASK_WALK_PATH" or "TASK_RUN_PATH")
+		self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(nav) > 600 && "TASK_WALK_PATH" or "TASK_RUN_PATH",function(x) x.CanShootWhenMoving = true x.ConstantlyFaceEnemyVisible = (IsValid(self:GetActiveWeapon()) and true) or false end)
 		if debug then
 			local pTime = self:GetPathTimeToGoal() *2
 			for _,v in pairs(spots) do
@@ -1272,13 +1297,12 @@ function ENT:CustomOnThink()
 			end
 		end
 	end
-	if SERVER then
-		if IsValid(self.Bomb) then
-			local bonepos,boneang = self:GetBonePosition(self:LookupBone("ValveBiped.Bip01_Spine1"))
-			self.Bomb:SetPos(bonepos +self:GetForward() *-3 +self:GetUp() *-4)
-			self.Bomb:SetAngles(boneang +Angle(-20,90,15))
-			self.Bomb:SetCollisionGroup(COLLISION_GROUP_IN_VEHICLE)
-		end
+	local bomb = self.Bomb
+	if IsValid(bomb) then
+		local bonepos,boneang = self:GetBonePosition(self:LookupBone("ValveBiped.Bip01_Spine1"))
+		bomb:SetPos(bonepos +self:GetForward() *-3 +self:GetUp() *-4)
+		bomb:SetAngles(boneang +Angle(-20,90,15))
+		bomb:SetCollisionGroup(COLLISION_GROUP_IN_VEHICLE)
 	end
 	if debug then
 		if CurTime() > c && self:GetCurWaypointPos() then
@@ -1295,13 +1319,19 @@ function ENT:CustomOnThink()
 	end
 	self.DisableWandering = self.GM
 	if self.GM && !IsValid(controller) then
-		local currentGM = self:VJ_CSS_HostageActive() or self:VJ_CSS_ModeActive()
+		if !IsValid(self.GM_Entity) then
+			self.GM_Entity = self:VJ_CSS_ModeEntity()
+		end
+		if !IsValid(self.GM_EntityHostage) then
+			self.GM_EntityHostage = self:VJ_CSS_HostageModeEntity()
+		end
+		local currentGM = IsValid(self.GM_EntityHostage) or IsValid(self.GM_Entity)
 		if !currentGM then
 			self.GM = false
 			return
 		end
 		local team = self.Team
-		if IsValid(self:VJ_CSS_HostageModeEntity()) then
+		if IsValid(self.GM_EntityHostage) then
 			local zones = self:VJ_CSS_FindRescueZones()
 			local hostages = self:VJ_CSS_FindHostages()
 			local waitingHostages = {}
@@ -1329,7 +1359,7 @@ function ENT:CustomOnThink()
 					end
 					if CurTime() > self.NextSetMoveT && self.TargetPosition then
 						self:SetLastPosition(self.TargetPosition)
-						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
+						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH",function(x) x.CanShootWhenMoving = true x.ConstantlyFaceEnemyVisible = (IsValid(self:GetActiveWeapon()) and true) or false end)
 						self:RefreshAI(math.Rand(6,12))
 					end
 					if IsValid(self.Objective) && self.Objective:IsNPC() && self:GetPos():Distance(self.Objective:GetPos()) <= 80 then
@@ -1367,7 +1397,7 @@ function ENT:CustomOnThink()
 					end
 					if CurTime() > self.NextSetMoveT && self.TargetPosition then
 						self:SetLastPosition(self.TargetPosition)
-						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
+						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH",function(x) x.CanShootWhenMoving = true x.ConstantlyFaceEnemyVisible = (IsValid(self:GetActiveWeapon()) and true) or false end)
 						self:RefreshAI(math.Rand(6,12))
 					end
 				end
@@ -1386,7 +1416,7 @@ function ENT:CustomOnThink()
 				if self.Objective && !IsValid(enemyEnt) then
 					if CurTime() > self.NextSetMoveT then
 						self:SetLastPosition(self.TargetPosition)
-						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
+						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH",function(x) x.CanShootWhenMoving = true x.ConstantlyFaceEnemyVisible = (IsValid(self:GetActiveWeapon()) and true) or false end)
 						self:RefreshAI(math.Rand(6,12))
 					end
 				end
@@ -1394,7 +1424,7 @@ function ENT:CustomOnThink()
 				if !IsValid(enemyEnt) or IsValid(enemyEnt) && enemyEnt:GetPos():Distance(self:GetPos()) > 1000 then
 					if CurTime() > self.NextSetMoveT then
 						self:SetLastPosition(!IsValid(theBomb.Diffuser) && theBomb:GetPos() or theBomb:GetPos() +Vector(math.Rand(-500,500),math.Rand(-500,500),math.Rand(0,200)))
-						self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH")
+						self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH",function(x) x.CanShootWhenMoving = true x.ConstantlyFaceEnemyVisible = (IsValid(self:GetActiveWeapon()) and true) or false end)
 						self:RefreshAI(math.Rand(6,12))
 					end
 					if self:GetPos():Distance(theBomb:GetPos()) <= 110 && !IsValid(theBomb.Diffuser) then
@@ -1429,7 +1459,7 @@ function ENT:CustomOnThink()
 					if self.Objective == 3 && IsValid(self.GrabBomb) then
 						if CurTime() > self.NextSetMoveT then
 							self:SetLastPosition(self.GrabBomb:GetPos())
-							self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH")
+							self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH",function(x) x.CanShootWhenMoving = true x.ConstantlyFaceEnemyVisible = (IsValid(self:GetActiveWeapon()) and true) or false end)
 							self:RefreshAI(math.Rand(6,12))
 						end
 						if self:GetPos():Distance(self.GrabBomb:GetPos()) < 150 then
@@ -1442,7 +1472,7 @@ function ENT:CustomOnThink()
 					end
 					if CurTime() > self.NextSetMoveT then
 						self:SetLastPosition(self.TargetPosition)
-						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH")
+						self:VJ_TASK_GOTO_LASTPOS(self:GetPos():Distance(self.TargetPosition) > 600 && "TASK_RUN_PATH" or "TASK_WALK_PATH",function(x) x.CanShootWhenMoving = true x.ConstantlyFaceEnemyVisible = (IsValid(self:GetActiveWeapon()) and true) or false end)
 						self:RefreshAI(math.Rand(6,12))
 					end
 					if self.HasTheBomb then
@@ -1461,7 +1491,7 @@ function ENT:CustomOnThink()
 							local b = self:GoToSpot(800,theBomb)
 							if !b then
 								self:SetLastPosition(theBomb:GetPos() +Vector(math.Rand(-700,700),math.Rand(-700,700),math.Rand(0,200)))
-								self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH")
+								self:VJ_TASK_GOTO_LASTPOS("TASK_RUN_PATH",function(x) x.CanShootWhenMoving = true x.ConstantlyFaceEnemyVisible = (IsValid(self:GetActiveWeapon()) and true) or false end)
 							end
 							self:RefreshAI(math.Rand(6,12))
 						end
